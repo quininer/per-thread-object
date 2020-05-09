@@ -1,5 +1,4 @@
-use std::ptr::NonNull;
-use std::mem::ManuallyDrop;
+use std::cell::UnsafeCell;
 use parking_lot::Mutex;
 
 
@@ -11,7 +10,7 @@ pub struct PagePool<T> {
 }
 
 struct Page<T> {
-    ptr: NonNull<[ManuallyDrop<Option<T>>; PAGE_CAP]>
+    ptr: Box<[UnsafeCell<Option<T>>; PAGE_CAP]>
 }
 
 impl<T> PagePool<T> {
@@ -22,7 +21,7 @@ impl<T> PagePool<T> {
         }
     }
 
-    pub fn find(&self, id: usize) -> Option<&T> {
+    pub fn get(&self, id: usize) -> Option<&T> {
         let (page_id, index) = map_index(id);
 
         let obj = if page_id == 0 {
@@ -37,7 +36,7 @@ impl<T> PagePool<T> {
         }
     }
 
-    pub fn insert(&self, id: usize) -> *mut Option<T> {
+    pub fn get_or_new(&self, id: usize) -> *mut Option<T> {
         let (page_id, index) = map_index(id);
 
         if page_id == 0 {
@@ -82,27 +81,14 @@ impl<T> Page<T> {
             }
         }
 
-        let page = Box::new(arr![ManuallyDrop::new(None); x128]);
-        let ptr = Box::leak(page).into();
+        let page = Box::new(arr![UnsafeCell::new(None); x128]);
 
-        Page { ptr }
+        Page { ptr: page }
     }
 
     fn get(&self, index: usize) -> *mut Option<T> {
         unsafe {
-            let array: &mut [ManuallyDrop<Option<T>>; PAGE_CAP] = &mut *self.ptr.as_ptr();
-            array
-                .as_mut_ptr()
-                .add(index)
-                .cast()
-        }
-    }
-}
-
-impl<T> Drop for Page<T> {
-    fn drop(&mut self) {
-        unsafe {
-            Box::from_raw(self.ptr.as_ptr());
+            self.ptr.get_unchecked(index).get()
         }
     }
 }

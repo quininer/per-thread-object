@@ -1,5 +1,5 @@
 mod rc;
-mod threadid;
+mod thread;
 mod page;
 
 use rc::HeapRc;
@@ -19,15 +19,15 @@ impl<T: 'static> ThreadLocal<T> {
     }
 
     pub fn get(&self) -> Option<&T> {
-        let id = threadid::get();
+        let id = thread::get();
 
-        self.pool.find(id)
+        self.pool.get(id)
     }
 
     pub fn get_or<F: FnOnce() -> T>(&self, f: F) -> &T {
-        let id = threadid::get();
+        let id = thread::get();
 
-        let obj = unsafe { &mut *self.pool.insert(id) };
+        let obj = unsafe { &mut *self.pool.get_or_new(id) };
 
         match obj {
             Some(val) => val,
@@ -37,7 +37,7 @@ impl<T: 'static> ThreadLocal<T> {
                 let val = obj.get_or_insert(f());
 
                 unsafe {
-                    threadid::push(pool, ptr);
+                    thread::push(pool, ptr);
                 }
 
                 val
@@ -47,7 +47,7 @@ impl<T: 'static> ThreadLocal<T> {
 
     pub fn clean(&self) {
         unsafe {
-            threadid::clean(self.pool.as_ptr());
+            thread::clean(self.pool.as_ptr());
         }
     }
 }
