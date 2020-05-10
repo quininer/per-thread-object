@@ -3,7 +3,9 @@
 Efficient per-object thread-local storage implementation.
 
 Unlike `thread_local` crate, it can release objects normally at the end of thread,
-and will not move objects between multiple threads (I think this is a bug of `thread_local`).
+and will not move objects between multiple threads
+(see [playground](https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=cb3153e9ef7793f192e7b905b3f5e6bb)
+and [document](https://github.com/Amanieu/thread_local-rs/blob/34011020194908f3aa852cac59a83e81a325767e/src/lib.rs#L28)).
 
 Unlike `os-thread-local` crate, it only uses the `std::thread_local!` abstraction of rust standard library,
 and does not use any other platform-related APIs.
