@@ -12,7 +12,7 @@ and does not use any other platform-related APIs.
 This means that its capacity is not limited by `PTHREAD_KEYS_MAX`.
 
 And its performance is relatively good,
-value access for less than 64 threads is completely lock-free, and has `O(1)` time complexity.
+value access for less than N threads is completely lock-free, and has `O(1)` time complexity.
 But since we store thread id in `std::thread_local!`, so we will be slightly slower than `std::thread_local!`.
 
 ```

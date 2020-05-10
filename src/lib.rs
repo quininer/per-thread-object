@@ -47,7 +47,7 @@ use page::Pages;
 /// instead of using global space.
 ///
 /// this crate supports any number of threads,
-/// but only the 64 threads are lock-free.
+/// but only the N threads are lock-free.
 ///
 /// ## Panic when dropping
 ///
