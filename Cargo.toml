@@ -3,6 +3,11 @@ name = "per-thread-object"
 version = "0.1.0"
 authors = ["quininer <quininer@live.com>"]
 edition = "2018"
+license = "MIT"
+description = "Efficient per-object thread-local storage implementation"
+repository = "https://github.com/quininer/per-thread-object"
+homepage = "https://github.com/quininer/per-thread-object"
+documentation = "https://docs.rs/per-thread-object"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
