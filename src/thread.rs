@@ -2,8 +2,8 @@ use std::ptr::NonNull;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use parking_lot::{ lock_api::RawMutex as _, Mutex, RawMutex };
-use crate::rc::{ HeapRc, DropRc };
-use crate::page::{ PAGE_CAP, PagePool };
+use crate::rc::DropRc;
+use crate::page::PAGE_CAP;
 
 
 static THREAD_ID_POOL: Mutex<ThreadIdPool> =
@@ -110,8 +110,7 @@ pub fn get() -> usize {
     THREAD_STATE.with(|state| state.id)
 }
 
-pub unsafe fn push<T: 'static>(pool: HeapRc<PagePool<T>>, ptr: *mut Option<T>) {
-    let rc = pool.into_droprc();
+pub unsafe fn push<T: 'static>(rc: DropRc, ptr: *mut Option<T>) {
     let dtor = Dtor::new(ptr);
 
     THREAD_STATE.with(|state| {

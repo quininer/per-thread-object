@@ -3,6 +3,7 @@ use rayon::prelude::*;
 use criterion::{ criterion_main, criterion_group, Criterion, black_box };
 
 
+const N: usize = 100;
 
 fn bench_thread_local(c: &mut Criterion) {
     c.bench_function("std::thread_local!", |b| {
@@ -15,7 +16,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..300 {
+                    for _ in 0..N {
                         TL.with(|val| drop(black_box(val)));
                     }
                     start.elapsed()
@@ -34,7 +35,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..300 {
+                    for _ in 0..N {
                         let val = tl.get_or(|| 0x42);
                         black_box(val);
                     }
@@ -54,7 +55,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..300 {
+                    for _ in 0..N {
                         let val = tl.get_or(|| 0x42);
                         black_box(val);
                     }
@@ -74,7 +75,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..300 {
+                    for _ in 0..N {
                         tl.with(|val| drop(black_box(val)));
                     }
                     start.elapsed()
@@ -94,7 +95,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..300 {
+                    for _ in 0..N {
                         tl.entry(|e| drop(black_box(e.or_insert_with(|| 0x42))));
                     }
                     start.elapsed()

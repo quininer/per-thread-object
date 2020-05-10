@@ -29,8 +29,7 @@ mod rc;
 mod thread;
 mod page;
 
-use rc::HeapRc;
-use page::PagePool;
+use page::Pages;
 
 
 /// Per-object thread-local storage
@@ -55,13 +54,13 @@ use page::PagePool;
 /// If panic occurs during this process, it may cause a memory leak.
 #[derive(Clone)]
 pub struct ThreadLocal<T: 'static> {
-    pool: HeapRc<PagePool<T>>
+    pool: Pages<T>
 }
 
 impl<T: 'static> ThreadLocal<T> {
     pub fn new() -> ThreadLocal<T> {
         ThreadLocal {
-            pool: HeapRc::new(PagePool::new())
+            pool: Pages::new()
         }
     }
 
@@ -83,7 +82,7 @@ impl<T: 'static> ThreadLocal<T> {
                 let val = obj.get_or_insert(f());
 
                 unsafe {
-                    thread::push(pool, ptr);
+                    thread::push(pool.into_droprc(), ptr);
                 }
 
                 val
