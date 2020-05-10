@@ -73,7 +73,7 @@ impl<T> Clone for HeapRc<T> {
     fn clone(&self) -> HeapRc<T> {
         let inner = unsafe {  &*self.ptr.as_ptr() };
         inner.count.fetch_add(1, Ordering::Relaxed);
-        HeapRc { ptr: self.ptr.clone() }
+        HeapRc { ptr: self.ptr }
     }
 }
 

@@ -107,7 +107,6 @@ pub fn get() -> usize {
 
 pub unsafe fn push<T: 'static>(pool: HeapRc<PagePool<T>>, ptr: *mut Option<T>) {
     let rc = pool.into_droprc();
-
     let dtor = Dtor::new(rc, ptr);
 
     THREAD_STATE.with(|state| {

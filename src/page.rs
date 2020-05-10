@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use parking_lot::Mutex;
 
 
-pub(crate) const PAGE_CAP: usize = 128;
+pub(crate) const PAGE_CAP: usize = 64;
 
 pub struct PagePool<T> {
     page: Page<T>,
@@ -57,7 +57,7 @@ impl<T> PagePool<T> {
 impl<T> Page<T> {
     fn new() -> Page<T> {
         macro_rules! arr {
-            ( $e:expr ; x128 ) => {
+            ( $e:expr ; x64 ) => {
                 [
                     $e, $e, $e, $e, $e, $e, $e, $e,
                     $e, $e, $e, $e, $e, $e, $e, $e,
@@ -67,21 +67,11 @@ impl<T> Page<T> {
                     $e, $e, $e, $e, $e, $e, $e, $e,
                     $e, $e, $e, $e, $e, $e, $e, $e,
                     $e, $e, $e, $e, $e, $e, $e, $e,
-
-                    $e, $e, $e, $e, $e, $e, $e, $e,
-                    $e, $e, $e, $e, $e, $e, $e, $e,
-                    $e, $e, $e, $e, $e, $e, $e, $e,
-                    $e, $e, $e, $e, $e, $e, $e, $e,
-                    $e, $e, $e, $e, $e, $e, $e, $e,
-                    $e, $e, $e, $e, $e, $e, $e, $e,
-                    $e, $e, $e, $e, $e, $e, $e, $e,
-                    $e, $e, $e, $e, $e, $e, $e, $e,
-
                 ]
             }
         }
 
-        let page = Box::new(arr![UnsafeCell::new(None); x128]);
+        let page = Box::new(arr![UnsafeCell::new(None); x64]);
 
         Page { ptr: page }
     }

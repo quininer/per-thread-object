@@ -1,3 +1,30 @@
+//! Efficient per-object thread-local storage implementation.
+//!
+//! ```rust
+//! use std::thread;
+//! use std::cell::RefCell;
+//! use per_thread_object::ThreadLocal;
+//!
+//! fn default() -> RefCell<u32> {
+//!     RefCell::new(0x0)
+//! }
+//!
+//! let tl: ThreadLocal<RefCell<u32>> = ThreadLocal::new();
+//! let tl2 = tl.clone();
+//!
+//! thread::spawn(move || {
+//!     *tl2.get_or(default)
+//!         .borrow_mut() += 1;
+//!     assert_eq!(0x1, *tl2.get().unwrap().borrow());
+//! })
+//!     .join()
+//!     .unwrap();
+//!
+//! *tl.get_or(default)
+//!     .borrow_mut() += 2;
+//! assert_eq!(0x2, *tl.get_or(default).borrow());
+//! ```
+
 mod rc;
 mod thread;
 mod page;
@@ -6,6 +33,26 @@ use rc::HeapRc;
 use page::PagePool;
 
 
+/// Per-object thread-local storage
+///
+/// ## Cloneable
+///
+/// `ThreadLocal` uses built-in reference counting,
+/// so it is usually not necessary to use `Arc`.
+///
+/// ## Capacity
+///
+/// `per-thread-object` has no capacity limit,
+/// each `ThreadLocal` instance will create its own memory space
+/// instead of using global space.
+///
+/// this crate supports any number of threads,
+/// but only the 64 threads are lock-free.
+///
+/// ## Panic when dropping
+///
+/// `ThreadLocal` will release object when calling `clean` or the end of thread.
+/// If panic occurs during this process, it may cause a memory leak.
 #[derive(Clone)]
 pub struct ThreadLocal<T: 'static> {
     pool: HeapRc<PagePool<T>>
@@ -18,10 +65,9 @@ impl<T: 'static> ThreadLocal<T> {
         }
     }
 
+    #[inline]
     pub fn get(&self) -> Option<&T> {
-        let id = thread::get();
-
-        self.pool.get(id)
+        self.pool.get(thread::get())
     }
 
     pub fn get_or<F: FnOnce() -> T>(&self, f: F) -> &T {
@@ -45,6 +91,10 @@ impl<T: 'static> ThreadLocal<T> {
         }
     }
 
+    /// Clean up the objects of this thread.
+    ///
+    /// Note that this is an `O(n)` operation,
+    /// where `n` is all `ThreadLocal` objects in the current thread.
     pub fn clean(&self) {
         unsafe {
             thread::clean(self.pool.as_ptr());
