@@ -64,12 +64,12 @@ impl<T> Pages<T> {
         }
     }
 
-    pub fn get_or_new(&self, id: usize) -> *mut Option<T> {
+    pub fn get_or_new(&self, id: usize) -> &mut Option<T> {
         unsafe {
             let inner = &*self.ptr.as_ptr();
             let (page_id, index) = map_index(id);
 
-            if page_id == 0 {
+            let obj = if page_id == 0 {
                 inner.fastpage.get_unchecked(index).get()
             } else {
                 let mut pages = inner.fallback.lock();
@@ -80,7 +80,9 @@ impl<T> Pages<T> {
                 }
 
                 pages[page_id].get(index)
-            }
+            };
+
+            &mut *obj
         }
     }
 
@@ -142,6 +144,7 @@ impl<T> Drop for Pages<T> {
     }
 }
 
+#[inline]
 fn map_index(n: usize) -> (usize, usize) {
     if n <= PAGE_CAP {
         (0, n)

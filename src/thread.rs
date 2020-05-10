@@ -25,7 +25,7 @@ struct ThreadState {
 }
 
 struct Dtor {
-    ptr: *mut (),
+    ptr: NonNull<()>,
     drop: unsafe fn(*mut ())
 }
 
@@ -69,24 +69,24 @@ impl ThreadState {
 }
 
 impl Dtor {
-    fn new<T: 'static>(ptr: *mut Option<T>) -> Dtor {
+    fn new<T: 'static>(ptr: NonNull<Option<T>>) -> Dtor {
         unsafe fn try_drop<T: 'static>(ptr: *mut ()) {
             let obj = &mut *ptr.cast::<Option<T>>();
             obj.take();
         }
 
         Dtor {
-            ptr: ptr as *mut (),
+            ptr: ptr.cast(),
             drop: try_drop::<T>
         }
     }
 
     unsafe fn drop(&self) {
-        (self.drop)(self.ptr)
+        (self.drop)(self.ptr.as_ptr())
     }
 
     unsafe fn take<T: 'static>(&self) -> Option<T> {
-        let obj = &mut *self.ptr.cast::<Option<T>>();
+        let obj = &mut *self.ptr.cast::<Option<T>>().as_ptr();
         obj.take()
     }
 }
@@ -110,7 +110,7 @@ pub fn get() -> usize {
     THREAD_STATE.with(|state| state.id)
 }
 
-pub unsafe fn push<T: 'static>(rc: DropRc, ptr: *mut Option<T>) {
+pub unsafe fn push<T: 'static>(rc: DropRc, ptr: NonNull<Option<T>>) {
     let dtor = Dtor::new(ptr);
 
     THREAD_STATE.with(|state| {

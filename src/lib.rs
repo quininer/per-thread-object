@@ -29,6 +29,7 @@ mod rc;
 mod thread;
 mod page;
 
+use std::ptr::NonNull;
 use page::Pages;
 
 
@@ -69,17 +70,28 @@ impl<T: 'static> ThreadLocal<T> {
         self.pool.get(thread::get())
     }
 
+    #[inline]
     pub fn get_or<F: FnOnce() -> T>(&self, f: F) -> &T {
-        let id = thread::get();
+        enum Never {}
 
-        let obj = unsafe { &mut *self.pool.get_or_new(id) };
+        match self.get_or_try::<_, Never>(|| Ok(f())) {
+            Ok(val) => val,
+            Err(_) => loop {}
+        }
+    }
 
-        match obj {
+    pub fn get_or_try<F, E>(&self, f: F) -> Result<&T, E>
+    where
+        F: FnOnce() -> Result<T, E>
+    {
+        let obj = self.pool.get_or_new(thread::get());
+
+        let val = match obj {
             Some(val) => val,
             None => {
+                let ptr = NonNull::from(&*obj);
+                let val = obj.get_or_insert(f()?);
                 let pool = self.pool.clone();
-                let ptr = obj as *mut _;
-                let val = obj.get_or_insert(f());
 
                 unsafe {
                     thread::push(pool.into_droprc(), ptr);
@@ -87,15 +99,15 @@ impl<T: 'static> ThreadLocal<T> {
 
                 val
             }
-        }
+        };
+
+        Ok(val)
     }
 
     /// Clean up the objects of this thread.
     #[deprecated(since="0.1.1", note="please use `take` instead")]
     pub fn clean(&self) {
-        unsafe {
-            thread::take::<T>(self.pool.as_ptr());
-        }
+        self.take();
     }
 
     /// Take value from current thread.

@@ -1,3 +1,4 @@
+use std::cmp;
 use std::ptr::NonNull;
 use std::borrow::Borrow;
 
@@ -23,7 +24,7 @@ impl PartialEq for DropRc {
 
 impl PartialOrd for DropRc {
     #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         self.ptr.partial_cmp(&other.ptr)
     }
 }
@@ -32,7 +33,7 @@ impl Eq for DropRc {}
 
 impl Ord for DropRc {
     #[inline]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
         self.ptr.cmp(&other.ptr)
     }
 }
