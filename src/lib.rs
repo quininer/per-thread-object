@@ -92,12 +92,17 @@ impl<T: 'static> ThreadLocal<T> {
     }
 
     /// Clean up the objects of this thread.
-    ///
-    /// Note that this is an `O(n)` operation,
-    /// where `n` is all `ThreadLocal` objects in the current thread.
+    #[deprecated(since="0.1.1", note="please use `take` instead")]
     pub fn clean(&self) {
         unsafe {
-            thread::clean(self.pool.as_ptr());
+            thread::take::<T>(self.pool.as_ptr());
+        }
+    }
+
+    /// Take value from current thread.
+    pub fn take(&self) -> Option<T> {
+        unsafe {
+            thread::take::<T>(self.pool.as_ptr())
         }
     }
 }

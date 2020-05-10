@@ -47,7 +47,8 @@ fn test_thread_get() {
         let val = tl3.get().unwrap();
         assert_eq!(0x22, **val);
 
-        tl3.clean();
+        let val = tl3.take().unwrap();
+        assert_eq!(0x22, *val);
 
         assert!(tl3.get().is_none());
     });
@@ -80,7 +81,7 @@ fn test_multi_obj() {
         let val = tla1.get().unwrap();
         assert_eq!(0x32, **val);
 
-        tla1.clean();
+        tla1.take();
 
         let val = tla1.get_or(|| Box::new(0x12));
         assert_eq!(0x12, **val);
@@ -95,7 +96,7 @@ fn test_multi_obj() {
         let val = tlb1.get().unwrap();
         assert_eq!(0x22, **val);
 
-        tlb1.clean();
+        tlb1.take();
 
         assert!(tlb1.get().is_none());
     });
@@ -131,7 +132,7 @@ fn test_panic() {
     tl.get_or(|| Bar);
 
     let ret = panic::catch_unwind(AssertUnwindSafe(|| {
-        tl.clean();
+        tl.take();
     }));
     assert!(ret.is_err());
 }

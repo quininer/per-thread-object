@@ -1,4 +1,6 @@
+use std::ptr::NonNull;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use parking_lot::{ lock_api::RawMutex as _, Mutex, RawMutex };
 use crate::rc::{ HeapRc, DropRc };
 use crate::page::{ PAGE_CAP, PagePool };
@@ -19,11 +21,10 @@ struct ThreadIdPool {
 
 struct ThreadState {
     id: usize,
-    list: RefCell<Vec<Dtor>>
+    map: RefCell<BTreeMap<DropRc, Dtor>>
 }
 
 struct Dtor {
-    rc: DropRc,
     ptr: *mut (),
     drop: unsafe fn(*mut ())
 }
@@ -62,20 +63,19 @@ impl ThreadState {
     fn new() -> ThreadState {
         ThreadState {
             id: THREAD_ID_POOL.lock().alloc(),
-            list: RefCell::new(Vec::new())
+            map: RefCell::new(BTreeMap::new())
         }
     }
 }
 
 impl Dtor {
-    fn new<T: 'static>(rc: DropRc, ptr: *mut Option<T>) -> Dtor {
+    fn new<T: 'static>(ptr: *mut Option<T>) -> Dtor {
         unsafe fn try_drop<T: 'static>(ptr: *mut ()) {
             let obj = &mut *ptr.cast::<Option<T>>();
             obj.take();
         }
 
         Dtor {
-            rc,
             ptr: ptr as *mut (),
             drop: try_drop::<T>
         }
@@ -84,13 +84,18 @@ impl Dtor {
     unsafe fn drop(&self) {
         (self.drop)(self.ptr)
     }
+
+    unsafe fn take<T: 'static>(&self) -> Option<T> {
+        let obj = &mut *self.ptr.cast::<Option<T>>();
+        obj.take()
+    }
 }
 
 impl Drop for ThreadState {
     fn drop(&mut self) {
-        let list = self.list.borrow_mut();
+        let map = self.map.borrow_mut();
 
-        for dtor in &*list {
+        for dtor in map.values() {
             unsafe {
                 dtor.drop();
             }
@@ -107,23 +112,15 @@ pub fn get() -> usize {
 
 pub unsafe fn push<T: 'static>(pool: HeapRc<PagePool<T>>, ptr: *mut Option<T>) {
     let rc = pool.into_droprc();
-    let dtor = Dtor::new(rc, ptr);
+    let dtor = Dtor::new(ptr);
 
     THREAD_STATE.with(|state| {
-        state.list.borrow_mut().push(dtor);
+        state.map.borrow_mut().insert(rc, dtor);
     });
 }
 
-pub unsafe fn clean(addr: *const ()) {
+pub unsafe fn take<T: 'static>(addr: NonNull<()>) -> Option<T> {
     THREAD_STATE.with(|state| {
-        let mut list = state.list.borrow_mut();
-
-        list.retain(|dtor| if dtor.rc.as_ptr() == addr {
-            dtor.drop();
-
-            false
-        } else {
-            true
-        })
-    });
+        state.map.borrow_mut().remove(&addr)?.take()
+    })
 }

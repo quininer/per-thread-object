@@ -15,7 +15,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..100 {
+                    for _ in 0..300 {
                         TL.with(|val| drop(black_box(val)));
                     }
                     start.elapsed()
@@ -34,7 +34,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..100 {
+                    for _ in 0..300 {
                         let val = tl.get_or(|| 0x42);
                         black_box(val);
                     }
@@ -54,7 +54,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..100 {
+                    for _ in 0..300 {
                         let val = tl.get_or(|| 0x42);
                         black_box(val);
                     }
@@ -74,7 +74,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..100 {
+                    for _ in 0..300 {
                         tl.with(|val| drop(black_box(val)));
                     }
                     start.elapsed()
@@ -94,7 +94,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .into_par_iter()
                 .map(|_| {
                     let start = Instant::now();
-                    for _ in 0..100 {
+                    for _ in 0..300 {
                         tl.entry(|e| drop(black_box(e.or_insert_with(|| 0x42))));
                     }
                     start.elapsed()

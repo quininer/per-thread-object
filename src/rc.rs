@@ -1,6 +1,7 @@
 use std::mem;
 use std::ops::Deref;
 use std::ptr::NonNull;
+use std::borrow::Borrow;
 use std::sync::atomic::{ AtomicUsize, Ordering };
 
 
@@ -29,8 +30,8 @@ impl<T> HeapRc<T> {
     }
 
     #[inline]
-    pub fn as_ptr(&self) -> *const () {
-        self.ptr.as_ptr() as *const _
+    pub fn as_ptr(&self) -> NonNull<()> {
+        self.ptr.cast()
     }
 
     pub fn into_droprc(self) -> DropRc {
@@ -53,16 +54,10 @@ impl<T> HeapRc<T> {
     }
 }
 
-impl DropRc {
-    #[inline]
-    pub fn as_ptr(&self) -> *const () {
-        self.ptr.as_ptr()
-    }
-}
-
 impl<T> Deref for HeapRc<T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         let inner = unsafe {  &*self.ptr.as_ptr() };
         &inner.inner
@@ -86,6 +81,36 @@ impl<T> Drop for HeapRc<T> {
                 Box::from_raw(self.ptr.as_ptr());
             }
         }
+    }
+}
+
+impl PartialEq for DropRc {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr.eq(&other.ptr)
+    }
+}
+
+impl PartialOrd for DropRc {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.ptr.partial_cmp(&other.ptr)
+    }
+}
+
+impl Eq for DropRc {}
+
+impl Ord for DropRc {
+    #[inline]
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ptr.cmp(&other.ptr)
+    }
+}
+
+impl Borrow<NonNull<()>> for DropRc {
+    #[inline]
+    fn borrow(&self) -> &NonNull<()> {
+        &self.ptr
     }
 }
 
