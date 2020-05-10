@@ -82,11 +82,6 @@ impl<T> Pages<T> {
         &mut *obj
     }
 
-    #[inline]
-    pub fn as_ptr(&self) -> NonNull<()> {
-        self.ptr.cast()
-    }
-
     pub fn into_droprc(self) -> DropRc {
         unsafe fn drop_inner_rc<T>(ptr: *mut ()) {
             let ptr = ptr as *mut Inner<T>;

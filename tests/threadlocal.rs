@@ -39,7 +39,7 @@ fn test_thread_get() {
     });
 
     let j2 = thread::spawn(move || {
-        let mut tl3 = tl3;
+        let tl3 = tl3;
 
         assert!(tl3.get().is_none());
 
@@ -48,11 +48,6 @@ fn test_thread_get() {
 
         let val = tl3.get().unwrap();
         assert_eq!(0x22, **val);
-
-        let val = tl3.take().unwrap();
-        assert_eq!(0x22, *val);
-
-        assert!(tl3.get().is_none());
     });
 
     let val = tl.get_or(|| Box::new(0x42));
@@ -75,7 +70,7 @@ fn test_multi_obj() {
     let tlb1: Arc<ThreadLocal<_>> = tlb.clone();
 
     let j = thread::spawn(move || {
-        let mut tla1 = tla1;
+        let tla1 = tla1;
 
         assert!(tla1.get().is_none());
 
@@ -84,11 +79,6 @@ fn test_multi_obj() {
 
         let val = tla1.get().unwrap();
         assert_eq!(0x32, **val);
-
-        tla1.take();
-
-        let val = tla1.get_or(|| Box::new(0x12));
-        assert_eq!(0x12, **val);
     });
 
     let j2 = thread::spawn(move || {
@@ -113,26 +103,4 @@ fn test_multi_obj() {
     assert_eq!(0x42, **val);
     let val = tlb.get().unwrap();
     assert_eq!(0x52, **val);
-}
-
-#[test]
-fn test_panic() {
-    use std::panic::{ self, AssertUnwindSafe };
-
-    struct Bar;
-
-    impl Drop for Bar {
-        fn drop(&mut self) {
-            panic!()
-        }
-    }
-
-    let mut tl: ThreadLocal<Bar> = ThreadLocal::new();
-
-    tl.get_or(|| Bar);
-
-    let ret = panic::catch_unwind(AssertUnwindSafe(|| {
-        tl.take();
-    }));
-    assert!(ret.is_err());
 }

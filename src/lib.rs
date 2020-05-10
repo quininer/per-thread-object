@@ -105,13 +105,6 @@ impl<T: 'static> ThreadLocal<T> {
 
         Ok(val)
     }
-
-    /// Take value from current thread.
-    pub fn take(&mut self) -> Option<T> {
-        unsafe {
-            thread::take::<T>(self.pool.as_ptr())
-        }
-    }
 }
 
 impl<T: 'static> Default for ThreadLocal<T> {

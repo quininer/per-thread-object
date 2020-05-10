@@ -1,6 +1,5 @@
 use std::ptr::NonNull;
 use std::cell::RefCell;
-use std::collections::BTreeMap;
 use parking_lot::{ lock_api::RawMutex as _, Mutex, RawMutex };
 use crate::rc::DropRc;
 use crate::page::PAGE_CAP;
@@ -21,7 +20,7 @@ struct ThreadIdPool {
 
 struct ThreadState {
     id: usize,
-    map: RefCell<BTreeMap<DropRc, Dtor>>
+    list: RefCell<Vec<(DropRc, Dtor)>>
 }
 
 struct Dtor {
@@ -63,7 +62,7 @@ impl ThreadState {
     fn new() -> ThreadState {
         ThreadState {
             id: THREAD_ID_POOL.lock().alloc(),
-            map: RefCell::new(BTreeMap::new())
+            list: RefCell::new(Vec::new())
         }
     }
 }
@@ -84,18 +83,13 @@ impl Dtor {
     unsafe fn drop(&self) {
         (self.drop)(self.ptr.as_ptr())
     }
-
-    unsafe fn take<T: 'static>(&self) -> Option<T> {
-        let obj = &mut *self.ptr.cast::<Option<T>>().as_ptr();
-        obj.take()
-    }
 }
 
 impl Drop for ThreadState {
     fn drop(&mut self) {
-        let map = self.map.borrow_mut();
+        let list = self.list.borrow_mut();
 
-        for dtor in map.values() {
+        for (_, dtor) in &*list {
             unsafe {
                 dtor.drop();
             }
@@ -113,13 +107,5 @@ pub fn get() -> usize {
 pub unsafe fn push<T: 'static>(rc: DropRc, ptr: NonNull<Option<T>>) {
     let dtor = Dtor::new(ptr);
 
-    THREAD_STATE.with(|state| {
-        state.map.borrow_mut().insert(rc, dtor);
-    });
-}
-
-pub unsafe fn take<T: 'static>(addr: NonNull<()>) -> Option<T> {
-    THREAD_STATE.with(|state| {
-        state.map.borrow_mut().remove(&addr)?.take()
-    })
+    THREAD_STATE.with(|state| state.list.borrow_mut().push((rc, dtor)));
 }
