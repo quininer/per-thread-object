@@ -12,7 +12,7 @@ pub struct Pages<T> {
     ptr: NonNull<Inner<T>>
 }
 
-pub struct Inner<T> {
+struct Inner<T> {
     count: AtomicUsize,
     fallback: Mutex<Vec<Page<T>>>,
     fastpage: [UnsafeCell<Option<T>>; PAGE_CAP],
@@ -48,42 +48,38 @@ impl<T> Pages<T> {
         Pages { ptr: Box::leak(inner).into() }
     }
 
-    pub fn get(&self, id: usize) -> Option<&T> {
-        unsafe {
-            let inner = &*self.ptr.as_ptr();
-            let (page_id, index) = map_index(id);
+    pub unsafe fn get(&self, id: usize) -> Option<&T> {
+        let inner = &*self.ptr.as_ptr();
+        let (page_id, index) = map_index(id);
 
-            let obj = if page_id == 0 {
-                inner.fastpage.get_unchecked(index).get()
-            } else {
-                let pages = inner.fallback.lock();
-                pages.get(page_id - 1)?.get(index)
-            };
+        let obj = if page_id == 0 {
+            inner.fastpage.get_unchecked(index).get()
+        } else {
+            let pages = inner.fallback.lock();
+            pages.get(page_id - 1)?.get(index)
+        };
 
-            (&*obj).as_ref()
-        }
+        (&*obj).as_ref()
     }
 
-    pub fn get_or_new(&self, id: usize) -> &mut Option<T> {
-        unsafe {
-            let inner = &*self.ptr.as_ptr();
-            let (page_id, index) = map_index(id);
+    pub unsafe fn get_or_new(&self, id: usize) -> &mut Option<T> {
+        let inner = &*self.ptr.as_ptr();
+        let (page_id, index) = map_index(id);
 
-            let obj = if page_id == 0 {
-                inner.fastpage.get_unchecked(index).get()
-            } else {
-                let mut pages = inner.fallback.lock();
-                let page_id = page_id - 1;
+        let obj = if page_id == 0 {
+            inner.fastpage.get_unchecked(index).get()
+        } else {
+            let mut pages = inner.fallback.lock();
+            let page_id = page_id - 1;
 
-                if page_id > pages.len() {
-                    pages.resize_with(page_id + 1, Page::new);
-                }
+            if page_id > pages.len() {
+                pages.resize_with(page_id + 1, Page::new);
+            }
 
-                pages[page_id].get(index)
-            };
+            pages.get_unchecked(page_id).get(index)
+        };
 
-            &mut *obj
-        }
+        &mut *obj
     }
 
     #[inline]
@@ -117,10 +113,8 @@ impl<T> Page<T> {
     }
 
     #[inline]
-    fn get(&self, index: usize) -> *mut Option<T> {
-        unsafe {
-            self.ptr.get_unchecked(index).get()
-        }
+    unsafe fn get(&self, index: usize) -> *mut Option<T> {
+        self.ptr.get_unchecked(index).get()
     }
 }
 

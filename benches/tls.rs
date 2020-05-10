@@ -3,7 +3,7 @@ use rayon::prelude::*;
 use criterion::{ criterion_main, criterion_group, Criterion, black_box };
 
 
-const N: usize = 100;
+const N: usize = 500;
 
 fn bench_thread_local(c: &mut Criterion) {
     c.bench_function("std::thread_local!", |b| {

@@ -67,7 +67,9 @@ impl<T: 'static> ThreadLocal<T> {
 
     #[inline]
     pub fn get(&self) -> Option<&T> {
-        self.pool.get(thread::get())
+        unsafe {
+            self.pool.get(thread::get())
+        }
     }
 
     #[inline]
@@ -76,7 +78,7 @@ impl<T: 'static> ThreadLocal<T> {
 
         match self.get_or_try::<_, Never>(|| Ok(f())) {
             Ok(val) => val,
-            Err(_) => loop {}
+            Err(never) => match never {}
         }
     }
 
@@ -84,7 +86,7 @@ impl<T: 'static> ThreadLocal<T> {
     where
         F: FnOnce() -> Result<T, E>
     {
-        let obj = self.pool.get_or_new(thread::get());
+        let obj = unsafe { self.pool.get_or_new(thread::get()) };
 
         let val = match obj {
             Some(val) => val,
@@ -104,14 +106,8 @@ impl<T: 'static> ThreadLocal<T> {
         Ok(val)
     }
 
-    /// Clean up the objects of this thread.
-    #[deprecated(since="0.1.1", note="please use `take` instead")]
-    pub fn clean(&self) {
-        self.take();
-    }
-
     /// Take value from current thread.
-    pub fn take(&self) -> Option<T> {
+    pub fn take(&mut self) -> Option<T> {
         unsafe {
             thread::take::<T>(self.pool.as_ptr())
         }

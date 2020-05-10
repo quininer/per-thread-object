@@ -39,6 +39,8 @@ fn test_thread_get() {
     });
 
     let j2 = thread::spawn(move || {
+        let mut tl3 = tl3;
+
         assert!(tl3.get().is_none());
 
         let val = tl3.get_or(|| Box::new(0x22));
@@ -73,6 +75,8 @@ fn test_multi_obj() {
     let tlb1: Arc<ThreadLocal<_>> = tlb.clone();
 
     let j = thread::spawn(move || {
+        let mut tla1 = tla1;
+
         assert!(tla1.get().is_none());
 
         let val = tla1.get_or(|| Box::new(0x32));
@@ -95,10 +99,6 @@ fn test_multi_obj() {
 
         let val = tlb1.get().unwrap();
         assert_eq!(0x22, **val);
-
-        tlb1.take();
-
-        assert!(tlb1.get().is_none());
     });
 
     let val = tla.get_or(|| Box::new(0x42));
@@ -127,7 +127,7 @@ fn test_panic() {
         }
     }
 
-    let tl: ThreadLocal<Bar> = ThreadLocal::new();
+    let mut tl: ThreadLocal<Bar> = ThreadLocal::new();
 
     tl.get_or(|| Bar);
 
