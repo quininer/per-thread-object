@@ -21,7 +21,7 @@ fn test_get() {
 
 #[test]
 fn test_thread_get() {
-    let tl: ThreadLocal<Box<usize>> = ThreadLocal::new();
+    let tl: Arc<ThreadLocal<Box<usize>>> = Arc::new(ThreadLocal::new());
     let tl2 = tl.clone();
     let tl3 = tl2.clone();
 
@@ -61,6 +61,7 @@ fn test_thread_get() {
 fn test_multi_obj() {
     let tla: ThreadLocal<Box<u32>> = ThreadLocal::new();
     let tlb: ThreadLocal<Box<u64>> = ThreadLocal::new();
+    let tla = Arc::new(tla);
     let tlb = Arc::new(tlb);
 
     assert!(tla.get().is_none());

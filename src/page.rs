@@ -1,110 +1,125 @@
-use std::mem;
+use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 use std::cell::UnsafeCell;
-use std::sync::atomic::{ AtomicUsize, Ordering };
 use parking_lot::Mutex;
-use crate::rc::DropRc;
+use crate::thread::ThreadHandle;
 
 
-pub(crate) const PAGE_CAP: usize = 64;
+pub(crate) const DEFAULT_PAGE_CAP: usize = 16;
 
 pub struct Pages<T> {
     ptr: NonNull<Inner<T>>
 }
 
 struct Inner<T> {
-    count: AtomicUsize,
+    threads: Mutex<Vec<ThreadHandle>>,
     fallback: Mutex<Vec<Page<T>>>,
-    fastpage: [UnsafeCell<Option<T>>; PAGE_CAP],
+    fastpage: [ManuallyDrop<UnsafeCell<Option<T>>>; DEFAULT_PAGE_CAP]
 }
 
 struct Page<T> {
-    ptr: Box<[UnsafeCell<Option<T>>; PAGE_CAP]>
-}
-
-macro_rules! arr {
-    ( $e:expr ; x64 ) => {
-        [
-            $e, $e, $e, $e, $e, $e, $e, $e,
-            $e, $e, $e, $e, $e, $e, $e, $e,
-            $e, $e, $e, $e, $e, $e, $e, $e,
-            $e, $e, $e, $e, $e, $e, $e, $e,
-            $e, $e, $e, $e, $e, $e, $e, $e,
-            $e, $e, $e, $e, $e, $e, $e, $e,
-            $e, $e, $e, $e, $e, $e, $e, $e,
-            $e, $e, $e, $e, $e, $e, $e, $e,
-        ]
-    }
+    ptr: Box<[ManuallyDrop<UnsafeCell<Option<T>>>]>
 }
 
 impl<T> Pages<T> {
+    #[inline]
     pub fn new() -> Pages<T> {
+        Pages::with_threads(DEFAULT_PAGE_CAP)
+    }
+
+    pub fn with_threads(_num: usize) -> Pages<T> {
+        macro_rules! arr {
+            ( $e:expr ; x16 ) => {
+                [
+                    $e, $e, $e, $e,
+                    $e, $e, $e, $e,
+                    $e, $e, $e, $e,
+                    $e, $e, $e, $e
+                ]
+            }
+        }
+
         let inner = Box::new(Inner {
-            count: AtomicUsize::new(1),
+            threads: Mutex::new(Vec::new()),
             fallback: Mutex::new(Vec::new()),
-            fastpage: arr![UnsafeCell::new(None); x64]
+            fastpage: arr![ManuallyDrop::new(UnsafeCell::new(None)); x16]
         });
 
         Pages { ptr: Box::leak(inner).into() }
     }
 
-    pub unsafe fn get(&self, id: usize) -> Option<&T> {
-        let inner = &*self.ptr.as_ptr();
-        let (page_id, index) = map_index(id);
-
-        let obj = if page_id == 0 {
-            inner.fastpage.get_unchecked(index).get()
-        } else {
-            let pages = inner.fallback.lock();
-            pages.get(page_id - 1)?.get(index)
-        };
-
-        (&*obj).as_ref()
+    #[inline]
+    pub fn as_ptr(&self) -> *const () {
+        self.ptr.as_ptr() as *const ()
     }
 
+    pub fn push_thread_handle(&self, handle: ThreadHandle) {
+        let inner = unsafe { &*self.ptr.as_ptr() };
+
+        inner.threads.lock().push(handle);
+    }
+
+    #[inline]
+    pub unsafe fn get(&self, id: usize) -> Option<&T> {
+        let inner = &*self.ptr.as_ptr();
+        let (page_id, index) = map_index(DEFAULT_PAGE_CAP, id);
+
+        if page_id == 0 {
+            let obj = inner.fastpage.get_unchecked(index).get();
+            (*obj).as_ref()
+        } else {
+            Pages::or_get(inner, page_id, index)
+        }
+    }
+
+    #[inline]
     pub unsafe fn get_or_new(&self, id: usize) -> &mut Option<T> {
         let inner = &*self.ptr.as_ptr();
-        let (page_id, index) = map_index(id);
+        let (page_id, index) = map_index(DEFAULT_PAGE_CAP, id);
 
         let obj = if page_id == 0 {
             inner.fastpage.get_unchecked(index).get()
         } else {
-            let mut pages = inner.fallback.lock();
-            let page_id = page_id - 1;
-
-            if page_id > pages.len() {
-                pages.resize_with(page_id + 1, Page::new);
-            }
-
-            pages.get_unchecked(page_id).get(index)
+            Pages::or_new(inner, page_id, index)
         };
 
         &mut *obj
     }
 
-    pub fn into_droprc(self) -> DropRc {
-        unsafe fn drop_inner_rc<T>(ptr: *mut ()) {
-            let ptr = ptr as *mut Inner<T>;
-            let inner = &*ptr;
+    #[cold]
+    unsafe fn or_get(inner: &Inner<T>, page_id: usize, index: usize) -> Option<&T> {
+        let pages = inner.fallback.lock();
+        let obj = pages.get(page_id - 1)?.get(index);
+        (*obj).as_ref()
+    }
 
-            if inner.count.fetch_sub(1, Ordering::Relaxed) == 1 {
-                Box::from_raw(ptr);
-            }
+    #[cold]
+    unsafe fn or_new(inner: &Inner<T>, page_id: usize, index: usize) -> *mut Option<T> {
+        let mut pages = inner.fallback.lock();
+        let page_id = page_id - 1;
+
+        if page_id > pages.len() {
+            pages.resize_with(page_id + 1, Page::new);
         }
 
-        let ptr = self.ptr.cast();
-        mem::forget(self);
-
-        unsafe {
-            DropRc::new(ptr, drop_inner_rc::<T>)
-        }
+        pages.get_unchecked(page_id).get(index)
     }
 }
 
 impl<T> Page<T> {
-    #[cold]
     fn new() -> Page<T> {
-        Page { ptr: Box::new(arr![UnsafeCell::new(None); x64]) }
+        macro_rules! arr {
+            ( $e:expr ; x16 ) => {
+                vec![
+                    $e, $e, $e, $e,
+                    $e, $e, $e, $e,
+                    $e, $e, $e, $e,
+                    $e, $e, $e, $e
+                ]
+            }
+        }
+
+        Page { ptr: arr![ManuallyDrop::new(UnsafeCell::new(None)); x16].into_boxed_slice() }
     }
 
     #[inline]
@@ -113,32 +128,32 @@ impl<T> Page<T> {
     }
 }
 
-impl<T> Clone for Pages<T> {
-    fn clone(&self) -> Pages<T> {
-        let inner = unsafe {  &*self.ptr.as_ptr() };
-        inner.count.fetch_add(1, Ordering::Relaxed);
-        Pages { ptr: self.ptr }
-    }
-}
-
 impl<T> Drop for Pages<T> {
     fn drop(&mut self) {
-        let inner = unsafe {  &*self.ptr.as_ptr() };
+        {
+            let addr = self.as_ptr() as usize;
+            let inner = unsafe {  &*self.ptr.as_ptr() };
 
-        if inner.count.fetch_sub(1, Ordering::Relaxed) == 1 {
-            unsafe {
-                Box::from_raw(self.ptr.as_ptr());
+            let threads = inner.threads.lock();
+            for thread in &*threads {
+                unsafe {
+                    thread.release(addr);
+                }
             }
+        }
+
+        unsafe {
+            Box::from_raw(self.ptr.as_ptr());
         }
     }
 }
 
 #[inline]
-fn map_index(n: usize) -> (usize, usize) {
-    if n <= PAGE_CAP {
+fn map_index(cap: usize, n: usize) -> (usize, usize) {
+    if n <= cap {
         (0, n)
     } else {
-        let i = n / PAGE_CAP;
-        (i, n - (i * PAGE_CAP))
+        let i = n / cap;
+        (i, n - (i * cap))
     }
 }

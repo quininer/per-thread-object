@@ -1,9 +1,13 @@
+use std::sync::{ Arc, Weak };
 use std::ptr::NonNull;
-use std::cell::RefCell;
+use std::collections::BTreeMap;
 use parking_lot::{ lock_api::RawMutex as _, Mutex, RawMutex };
-use crate::rc::DropRc;
-use crate::page::PAGE_CAP;
+use crate::page::DEFAULT_PAGE_CAP;
 
+
+pub struct ThreadHandle(Weak<Mutex<DtorList>>);
+
+type DtorList = BTreeMap<usize, Dtor>;
 
 static THREAD_ID_POOL: Mutex<ThreadIdPool> =
     Mutex::const_new(RawMutex::INIT, ThreadIdPool::new());
@@ -14,13 +18,13 @@ thread_local!{
 
 struct ThreadIdPool {
     max: usize,
-    small_freelist: Vec<usize>,
+    small_freelist: Vec<usize>, // TODO use heapless vec
     slow_freelist: Vec<usize>
 }
 
 struct ThreadState {
     id: usize,
-    list: RefCell<Vec<(DropRc, Dtor)>>
+    list: Arc<Mutex<DtorList>>
 }
 
 struct Dtor {
@@ -41,6 +45,13 @@ impl ThreadIdPool {
         if let Some(id) = self.small_freelist.pop()
             .or_else(|| self.slow_freelist.pop())
         {
+            if self.slow_freelist.capacity() != 0
+                && self.slow_freelist.is_empty()
+                && self.small_freelist.len() < DEFAULT_PAGE_CAP / 2
+            {
+                self.slow_freelist.shrink_to_fit();
+            }
+
             id
         } else {
             let id = self.max;
@@ -50,7 +61,7 @@ impl ThreadIdPool {
     }
 
     fn dealloc(&mut self, id: usize) {
-        if id <= PAGE_CAP {
+        if id <= DEFAULT_PAGE_CAP {
             self.small_freelist.push(id);
         } else {
             self.slow_freelist.push(id)
@@ -62,7 +73,7 @@ impl ThreadState {
     fn new() -> ThreadState {
         ThreadState {
             id: THREAD_ID_POOL.lock().alloc(),
-            list: RefCell::new(Vec::new())
+            list: Arc::new(Mutex::new(BTreeMap::new()))
         }
     }
 }
@@ -87,9 +98,9 @@ impl Dtor {
 
 impl Drop for ThreadState {
     fn drop(&mut self) {
-        let list = self.list.borrow_mut();
+        let list = self.list.lock();
 
-        for (_, dtor) in &*list {
+        for dtor in list.values() {
             unsafe {
                 dtor.drop();
             }
@@ -99,13 +110,26 @@ impl Drop for ThreadState {
     }
 }
 
+impl ThreadHandle {
+    pub unsafe fn release(&self, addr: usize) {
+        if let Some(dtorlist) = self.0.upgrade() {
+            if let Some(dtor) = dtorlist.lock().remove(&addr) {
+                dtor.drop();
+            }
+        }
+    }
+}
+
 #[inline]
 pub fn get() -> usize {
     THREAD_STATE.with(|state| state.id)
 }
 
-pub unsafe fn push<T: 'static>(rc: DropRc, ptr: NonNull<Option<T>>) {
+pub unsafe fn push<T: 'static>(addr: usize, ptr: NonNull<Option<T>>) -> ThreadHandle {
     let dtor = Dtor::new(ptr);
 
-    THREAD_STATE.with(|state| state.list.borrow_mut().push((rc, dtor)));
+    THREAD_STATE.with(|state| {
+        state.list.lock().insert(addr, dtor);
+        ThreadHandle(Arc::downgrade(&state.list))
+    })
 }

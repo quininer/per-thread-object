@@ -2,8 +2,8 @@
 
 Efficient per-object thread-local storage implementation.
 
-Unlike `thread_local` crate, it can release objects normally at the end of thread,
-and will not move objects between multiple threads
+Unlike `thread_local` crate, it will normally release the object at the end of thread.
+even though it will release object in other threads, but it will not let other threads use old object
 (see [playground](https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=cb3153e9ef7793f192e7b905b3f5e6bb)
 and [document](https://github.com/Amanieu/thread_local-rs/blob/34011020194908f3aa852cac59a83e81a325767e/src/lib.rs#L28)).
 
@@ -12,7 +12,7 @@ and does not use any other platform-related APIs.
 This means that its capacity is not limited by `PTHREAD_KEYS_MAX`.
 
 And its performance is relatively good,
-value access for less than N threads is completely lock-free, and has `O(1)` time complexity.
+value access for less than `N` threads is completely lock-free, and has `O(1)` time complexity.
 But since we store thread id in `std::thread_local!`, so we will be slightly slower than `std::thread_local!`.
 
 ```

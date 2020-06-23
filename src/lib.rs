@@ -2,6 +2,7 @@
 //!
 //! ```rust
 //! use std::thread;
+//! use std::sync::Arc;
 //! use std::cell::RefCell;
 //! use per_thread_object::ThreadLocal;
 //!
@@ -9,7 +10,7 @@
 //!     RefCell::new(0x0)
 //! }
 //!
-//! let tl: ThreadLocal<RefCell<u32>> = ThreadLocal::new();
+//! let tl: Arc<ThreadLocal<RefCell<u32>>> = Arc::new(ThreadLocal::new());
 //! let tl2 = tl.clone();
 //!
 //! thread::spawn(move || {
@@ -25,7 +26,6 @@
 //! assert_eq!(0x2, *tl.get_or(default).borrow());
 //! ```
 
-mod rc;
 mod thread;
 mod page;
 
@@ -35,14 +35,9 @@ use page::Pages;
 
 /// Per-object thread-local storage
 ///
-/// ## Cloneable
-///
-/// `ThreadLocal` uses built-in reference counting,
-/// so it is usually not necessary to use `Arc`.
-///
 /// ## Capacity
 ///
-/// `per-thread-object` has no capacity limit,
+/// `per-thread-object` has no max capacity limit,
 /// each `ThreadLocal` instance will create its own memory space
 /// instead of using global space.
 ///
@@ -53,12 +48,11 @@ use page::Pages;
 ///
 /// `ThreadLocal` will release object when calling `clean` or the end of thread.
 /// If panic occurs during this process, it may cause a memory leak.
-#[derive(Clone)]
-pub struct ThreadLocal<T: 'static> {
+pub struct ThreadLocal<T: Send + 'static> {
     pool: Pages<T>
 }
 
-impl<T: 'static> ThreadLocal<T> {
+impl<T: Send + 'static> ThreadLocal<T> {
     pub fn new() -> ThreadLocal<T> {
         ThreadLocal {
             pool: Pages::new()
@@ -74,14 +68,15 @@ impl<T: 'static> ThreadLocal<T> {
 
     #[inline]
     pub fn get_or<F: FnOnce() -> T>(&self, f: F) -> &T {
-        enum Never {}
+        use std::convert::Infallible;
 
-        match self.get_or_try::<_, Never>(|| Ok(f())) {
+        match self.get_or_try::<_, Infallible>(|| Ok(f())) {
             Ok(val) => val,
             Err(never) => match never {}
         }
     }
 
+    #[inline]
     pub fn get_or_try<F, E>(&self, f: F) -> Result<&T, E>
     where
         F: FnOnce() -> Result<T, E>
@@ -93,11 +88,8 @@ impl<T: 'static> ThreadLocal<T> {
             None => {
                 let ptr = NonNull::from(&*obj);
                 let val = obj.get_or_insert(f()?);
-                let pool = self.pool.clone();
 
-                unsafe {
-                    thread::push(pool.into_droprc(), ptr);
-                }
+                ThreadLocal::or_try(&self.pool, ptr);
 
                 val
             }
@@ -105,14 +97,23 @@ impl<T: 'static> ThreadLocal<T> {
 
         Ok(val)
     }
+
+    #[cold]
+    fn or_try(pool: &Pages<T>, ptr: NonNull<Option<T>>) {
+        let thread_handle = unsafe {
+            thread::push(pool.as_ptr() as usize, ptr)
+        };
+
+        pool.push_thread_handle(thread_handle);
+    }
 }
 
-impl<T: 'static> Default for ThreadLocal<T> {
+impl<T: Send + 'static> Default for ThreadLocal<T> {
     #[inline]
     fn default() -> ThreadLocal<T> {
         ThreadLocal::new()
     }
 }
 
-unsafe impl<T> Send for ThreadLocal<T> {}
-unsafe impl<T> Sync for ThreadLocal<T> {}
+unsafe impl<T: Send> Send for ThreadLocal<T> {}
+unsafe impl<T: Send> Sync for ThreadLocal<T> {}
