@@ -26,11 +26,17 @@
 //! assert_eq!(0x2, *tl.get_or(default).borrow());
 //! ```
 
+#[cfg(not(feature = "loom"))]
+mod loom;
+
+#[cfg(feature = "loom")]
+use loom;
+
 mod thread;
 mod page;
 
 use std::ptr::NonNull;
-use page::Pages;
+use page::Storage;
 
 
 /// Per-object thread-local storage
@@ -49,13 +55,13 @@ use page::Pages;
 /// `ThreadLocal` will release object when calling `clean` or the end of thread.
 /// If panic occurs during this process, it may cause a memory leak.
 pub struct ThreadLocal<T: Send + 'static> {
-    pool: Pages<T>
+    pool: Storage<T>
 }
 
 impl<T: Send + 'static> ThreadLocal<T> {
     pub fn new() -> ThreadLocal<T> {
         ThreadLocal {
-            pool: Pages::new()
+            pool: Storage::new()
         }
     }
 
@@ -81,7 +87,8 @@ impl<T: Send + 'static> ThreadLocal<T> {
     where
         F: FnOnce() -> Result<T, E>
     {
-        let obj = unsafe { self.pool.get_or_new(thread::get()) };
+        let id = thread::get();
+        let obj = unsafe { self.pool.get_or_new(id) };
 
         let val = match obj {
             Some(val) => val,
@@ -89,7 +96,7 @@ impl<T: Send + 'static> ThreadLocal<T> {
                 let ptr = NonNull::from(&*obj);
                 let val = obj.get_or_insert(f()?);
 
-                ThreadLocal::or_try(&self.pool, ptr);
+                ThreadLocal::or_try(&self.pool, id, ptr);
 
                 val
             }
@@ -99,12 +106,12 @@ impl<T: Send + 'static> ThreadLocal<T> {
     }
 
     #[cold]
-    fn or_try(pool: &Pages<T>, ptr: NonNull<Option<T>>) {
+    fn or_try(pool: &Storage<T>, id: usize, ptr: NonNull<Option<T>>) {
         let thread_handle = unsafe {
-            thread::push(pool.as_ptr() as usize, ptr)
+            thread::push(pool.as_threads_ref(), ptr)
         };
 
-        pool.push_thread_handle(thread_handle);
+        pool.insert_thread_handle(id, thread_handle);
     }
 }
 

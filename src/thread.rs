@@ -1,16 +1,23 @@
-use std::sync::{ Arc, Weak };
 use std::ptr::NonNull;
-use std::collections::BTreeMap;
-use parking_lot::{ lock_api::RawMutex as _, Mutex, RawMutex };
-use crate::page::DEFAULT_PAGE_CAP;
+use std::collections::HashMap;
+use crate::page::{ DEFAULT_PAGE_CAP, ThreadsRef };
+use crate::loom::sync::{ Arc, Mutex };
+
+#[cfg(feature = "loom")]
+use loom::thread_local;
 
 
-pub struct ThreadHandle(Weak<Mutex<DtorList>>);
+pub struct ThreadHandle(Arc<Mutex<DtorList>>);
 
-type DtorList = BTreeMap<usize, Dtor>;
+type DtorList = HashMap<ThreadsRef, Dtor>;
 
-static THREAD_ID_POOL: Mutex<ThreadIdPool> =
-    Mutex::const_new(RawMutex::INIT, ThreadIdPool::new());
+#[cfg(not(feature = "loom"))]
+static THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
+
+#[cfg(feature = "loom")]
+loom::lazy_static!{
+    static ref THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
+}
 
 thread_local!{
     static THREAD_STATE: ThreadState = ThreadState::new();
@@ -72,8 +79,8 @@ impl ThreadIdPool {
 impl ThreadState {
     fn new() -> ThreadState {
         ThreadState {
-            id: THREAD_ID_POOL.lock().alloc(),
-            list: Arc::new(Mutex::new(BTreeMap::new()))
+            id: THREAD_ID_POOL.lock().unwrap().alloc(),
+            list: Arc::new(Mutex::new(HashMap::new()))
         }
     }
 }
@@ -98,24 +105,30 @@ impl Dtor {
 
 impl Drop for ThreadState {
     fn drop(&mut self) {
-        let list = self.list.lock();
+        let list = self.list.lock().unwrap();
 
-        for dtor in list.values() {
+        for (tr, dtor) in list.iter() {
             unsafe {
                 dtor.drop();
+                tr.remove(self.id);
             }
         }
 
-        THREAD_ID_POOL.lock().dealloc(self.id);
+        THREAD_ID_POOL.lock().unwrap()
+            .dealloc(self.id);
     }
 }
 
 impl ThreadHandle {
-    pub unsafe fn release(&self, addr: usize) {
-        if let Some(dtorlist) = self.0.upgrade() {
-            if let Some(dtor) = dtorlist.lock().remove(&addr) {
-                dtor.drop();
-            }
+    pub unsafe fn release(&self, tr: &ThreadsRef) {
+        let dtor = {
+            self.0.lock()
+                .unwrap()
+                .remove(tr)
+        };
+
+        if let Some(dtor) = dtor {
+            dtor.drop();
         }
     }
 }
@@ -125,11 +138,13 @@ pub fn get() -> usize {
     THREAD_STATE.with(|state| state.id)
 }
 
-pub unsafe fn push<T: 'static>(addr: usize, ptr: NonNull<Option<T>>) -> ThreadHandle {
+pub unsafe fn push<T: 'static>(tr: ThreadsRef, ptr: NonNull<Option<T>>) -> ThreadHandle {
     let dtor = Dtor::new(ptr);
 
     THREAD_STATE.with(|state| {
-        state.list.lock().insert(addr, dtor);
-        ThreadHandle(Arc::downgrade(&state.list))
+        state.list.lock()
+            .unwrap()
+            .insert(tr, dtor);
+        ThreadHandle(Arc::clone(&state.list))
     })
 }
