@@ -7,9 +7,7 @@ use crate::loom::sync::{ Arc, Mutex };
 use loom::thread_local;
 
 
-pub struct ThreadHandle(Arc<Mutex<DtorList>>);
-
-type DtorList = HashMap<ThreadsRef, Dtor>;
+pub struct ThreadHandle(Arc<Mutex<HashMap<ThreadsRef, Dtor>>>);
 
 #[cfg(not(feature = "loom"))]
 static THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
@@ -31,7 +29,7 @@ struct ThreadIdPool {
 
 struct ThreadState {
     id: usize,
-    list: Arc<Mutex<DtorList>>
+    list: Arc<Mutex<HashMap<ThreadsRef, Dtor>>>
 }
 
 struct Dtor {
