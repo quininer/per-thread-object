@@ -38,6 +38,8 @@ mod page;
 use std::ptr::NonNull;
 use page::Storage;
 
+pub use page::DEFAULT_PAGE_CAP;
+
 
 /// Per-object thread-local storage
 ///
@@ -48,11 +50,11 @@ use page::Storage;
 /// instead of using global space.
 ///
 /// this crate supports any number of threads,
-/// but only the N threads are lock-free.
+/// but only the [DEFAULT_PAGE_CAP] threads are lock-free.
 ///
 /// ## Panic when dropping
 ///
-/// `ThreadLocal` will release object when calling `clean` or the end of thread.
+/// `ThreadLocal` will release object at the end of thread.
 /// If panic occurs during this process, it may cause a memory leak.
 pub struct ThreadLocal<T: Send + 'static> {
     pool: Storage<T>

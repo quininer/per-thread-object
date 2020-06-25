@@ -21,11 +21,18 @@ use per_thread_object::ThreadLocal;
 fn test_get() {
     loom::model(|| {
         let tl: ThreadLocal<Box<usize>> = ThreadLocal::new();
+        let tl = Arc::new(tl);
 
         assert!(tl.get().is_none());
 
         let val = tl.get_or(|| Box::new(0x42));
         assert_eq!(0x42, **val);
+
+        let tl2 = tl.clone();
+        thread::spawn(move || {
+            let val = tl2.get_or(|| Box::new(0x22));
+            assert_eq!(0x22, **val);
+        });
 
         let val = tl.get().unwrap();
         assert_eq!(0x42, **val);
@@ -123,5 +130,34 @@ fn test_multi_obj() {
         assert_eq!(0x42, **val);
         let val = tlb.get().unwrap();
         assert_eq!(0x52, **val);
+    });
+}
+
+#[test]
+fn test_more_thread() {
+    loom::model(|| {
+        let tla: ThreadLocal<Box<u32>> = ThreadLocal::new();
+        let tlb: ThreadLocal<Box<u64>> = ThreadLocal::new();
+        let tla = Arc::new(tla);
+        let tlb = Arc::new(tlb);
+
+        let handles = (0..33)
+            .map(|i| {
+                let tla = tla.clone();
+                let tlb = tlb.clone();
+
+                thread::spawn(move || {
+                    let val = tla.get_or(|| Box::new(i as u32));
+                    assert_eq!(i as u32, **val);
+
+                    let val = tlb.get_or(|| Box::new(i as u64));
+                    assert_eq!(i as u64, **val);
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for h in handles {
+            h.join().unwrap();
+        }
     });
 }

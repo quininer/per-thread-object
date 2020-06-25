@@ -10,7 +10,7 @@ use crate::loom::sync::Mutex;
 pub const DEFAULT_PAGE_CAP: usize = 16;
 
 pub struct Storage<T> {
-    ptr: NonNull<Inner<T>>
+    inner: Box<Inner<T>>
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -52,29 +52,25 @@ impl<T> Storage<T> {
             fastpage: arr![ManuallyDrop::new(UnsafeCell::new(None)); x16]
         });
 
-        Storage { ptr: Box::leak(inner).into() }
+        Storage { inner }
     }
 
     #[inline]
     pub fn as_threads_ref(&self) -> ThreadsRef {
-        unsafe {
-            ThreadsRef {
-                ptr: NonNull::from(&(&*self.ptr.as_ptr()).threads)
-            }
+        ThreadsRef {
+            ptr: NonNull::from(&self.inner.threads)
         }
     }
 
     pub fn insert_thread_handle(&self, id: usize, handle: ThreadHandle) {
-        let inner = unsafe { &*self.ptr.as_ptr() };
-
-        inner.threads.lock()
+        self.inner.threads.lock()
             .unwrap()
             .insert(id, handle);
     }
 
     #[inline]
     pub unsafe fn get(&self, id: usize) -> Option<&T> {
-        let inner = &*self.ptr.as_ptr();
+        let inner = &self.inner;
         let (page_id, index) = map_index(DEFAULT_PAGE_CAP, id);
 
         if page_id == 0 {
@@ -87,7 +83,7 @@ impl<T> Storage<T> {
 
     #[inline]
     pub unsafe fn get_or_new(&self, id: usize) -> &mut Option<T> {
-        let inner = &*self.ptr.as_ptr();
+        let inner = &self.inner;
         let (page_id, index) = map_index(DEFAULT_PAGE_CAP, id);
 
         if page_id == 0 {
@@ -143,12 +139,9 @@ impl<T> Page<T> {
 impl<T> Drop for Storage<T> {
     fn drop(&mut self) {
         let tr = self.as_threads_ref();
-        let inner = unsafe {
-            Box::from_raw(self.ptr.as_ptr())
-        };
 
         let threads = {
-            let mut threads = inner.threads.lock().unwrap();
+            let mut threads = self.inner.threads.lock().unwrap();
             mem::take(&mut *threads)
         };
         for thread in threads.values() {
