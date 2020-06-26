@@ -82,13 +82,13 @@ impl<T> Storage<T> {
     }
 
     #[inline]
-    pub unsafe fn get_or_new(&self, id: usize) -> &mut Option<T> {
+    pub unsafe fn get_or_new(&self, id: usize) -> NonNull<Option<T>> {
         let inner = &self.inner;
         let (page_id, index) = map_index(DEFAULT_PAGE_CAP, id);
 
         if page_id == 0 {
             inner.fastpage.get_unchecked(index)
-                .with_mut(|obj| &mut *obj)
+                .with_mut(|obj| NonNull::new_unchecked(obj))
         } else {
             Storage::or_new(inner, page_id, index)
         }
@@ -104,7 +104,7 @@ impl<T> Storage<T> {
     }
 
     #[cold]
-    unsafe fn or_new(inner: &Inner<T>, page_id: usize, index: usize) -> &mut Option<T> {
+    unsafe fn or_new(inner: &Inner<T>, page_id: usize, index: usize) -> NonNull<Option<T>> {
         let mut pages = inner.fallback.lock().unwrap();
         let page_id = page_id - 1;
 
@@ -115,7 +115,7 @@ impl<T> Storage<T> {
         pages.get_unchecked(page_id)
             .ptr
             .get_unchecked(index)
-            .with_mut(|obj| &mut *obj)
+            .with_mut(|obj| NonNull::new_unchecked(obj))
     }
 }
 

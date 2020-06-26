@@ -90,13 +90,15 @@ impl<T: Send + 'static> ThreadLocal<T> {
         F: FnOnce() -> Result<T, E>
     {
         let id = thread::get();
-        let obj = unsafe { self.pool.get_or_new(id) };
+        let ptr = unsafe { self.pool.get_or_new(id) };
 
-        let val = match obj {
+        let val = match unsafe { &*ptr.as_ptr() } {
             Some(val) => val,
             None => {
-                let ptr = NonNull::from(&*obj);
-                let val = obj.get_or_insert(f()?);
+                let val = unsafe {
+                    let obj = &mut *ptr.as_ptr();
+                    obj.get_or_insert(f()?)
+                };
 
                 ThreadLocal::or_try(&self.pool, id, ptr);
 
