@@ -1,4 +1,3 @@
-use std::mem;
 use std::ptr::NonNull;
 use std::collections::HashMap;
 use crate::page::{ DEFAULT_PAGE_CAP, ThreadsRef };
@@ -104,13 +103,9 @@ impl Dtor {
 
 impl Drop for ThreadState {
     fn drop(&mut self) {
-        // take list, avoid double free
-        let list = {
-            let mut list = self.list.lock().unwrap();
-            mem::take(&mut *list)
-        };
+        let mut list = self.list.lock().unwrap();
 
-        for (tr, dtor) in list.iter() {
+        for (tr, dtor) in list.drain() {
             unsafe {
                 dtor.drop();
 
