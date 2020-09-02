@@ -2,6 +2,7 @@ use std::mem;
 use std::ptr::NonNull;
 use std::mem::ManuallyDrop;
 use std::collections::BTreeMap;
+use cache_padded::CachePadded;
 use crate::thread::ThreadHandle;
 use crate::loom::cell::UnsafeCell;
 use crate::loom::sync::Mutex;
@@ -21,7 +22,7 @@ pub struct ThreadsRef {
 struct Inner<T> {
     threads: Mutex<BTreeMap<usize, ThreadHandle>>,
     fallback: Mutex<Vec<Page<T>>>,
-    fastpage: [ManuallyDrop<UnsafeCell<Option<T>>>; DEFAULT_PAGE_CAP]
+    fastpage: [CachePadded<ManuallyDrop<UnsafeCell<Option<T>>>>; DEFAULT_PAGE_CAP]
 }
 
 struct Page<T> {
@@ -49,7 +50,7 @@ impl<T> Storage<T> {
         let inner = Box::new(Inner {
             threads: Mutex::new(BTreeMap::new()),
             fallback: Mutex::new(Vec::new()),
-            fastpage: arr![ManuallyDrop::new(UnsafeCell::new(None)); x16]
+            fastpage: arr![CachePadded::new(ManuallyDrop::new(UnsafeCell::new(None))); x16]
         });
 
         Storage { inner }
