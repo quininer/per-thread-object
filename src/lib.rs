@@ -36,6 +36,7 @@ mod thread;
 mod page;
 
 use std::ptr::NonNull;
+use loom::cell::UnsafeCell;
 use page::Storage;
 
 pub use page::DEFAULT_PAGE_CAP;
@@ -92,25 +93,26 @@ impl<T: Send + 'static> ThreadLocal<T> {
         let id = thread::get();
         let ptr = unsafe { self.pool.get_or_new(id) };
 
-        let val = match unsafe { &*ptr.as_ptr() } {
-            Some(val) => val,
-            None => {
-                let val = unsafe {
-                    let obj = &mut *ptr.as_ptr();
-                    obj.get_or_insert(f()?)
-                };
+        let obj = unsafe { &*ptr.as_ptr() };
 
-                ThreadLocal::or_try(&self.pool, id, ptr);
+        let val = if let Some(val) = obj.with(|val| unsafe { &*val }) {
+            val
+        } else {
+            let val = obj.with_mut(|val| {
+                let val = unsafe { &mut *val }.get_or_insert(f()?);
+                Ok(val)
+            })?;
 
-                val
-            }
+            ThreadLocal::or_try(&self.pool, id, ptr);
+
+            val
         };
 
         Ok(val)
     }
 
     #[cold]
-    fn or_try(pool: &Storage<T>, id: usize, ptr: NonNull<Option<T>>) {
+    fn or_try(pool: &Storage<T>, id: usize, ptr: NonNull<UnsafeCell<Option<T>>>) {
         let thread_handle = unsafe {
             thread::push(pool.as_threads_ref(), ptr)
         };

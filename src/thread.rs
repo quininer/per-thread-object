@@ -2,6 +2,7 @@ use std::ptr::NonNull;
 use std::collections::HashMap;
 use crate::page::{ DEFAULT_PAGE_CAP, ThreadsRef };
 use crate::loom::sync::{ Arc, Mutex };
+use crate::loom::cell::UnsafeCell;
 
 #[cfg(feature = "loom")]
 use loom::thread_local;
@@ -9,13 +10,12 @@ use loom::thread_local;
 
 pub struct ThreadHandle(Arc<Mutex<HashMap<ThreadsRef, Dtor>>>);
 
-#[cfg(not(feature = "loom"))]
+#[cfg(all(feature = "parking_lot", not(feature = "loom")))]
 static THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
 
-#[cfg(feature = "loom")]
-loom::lazy_static!{
-    static ref THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
-}
+#[cfg(all(not(feature = "parking_lot")))]
+static THREAD_ID_POOL: once_cell::sync::Lazy<Mutex<ThreadIdPool>>
+    = once_cell::sync::Lazy::new(|| Mutex::new(ThreadIdPool::new()));
 
 thread_local!{
     static THREAD_STATE: ThreadState = ThreadState::new();
@@ -84,10 +84,10 @@ impl ThreadState {
 }
 
 impl Dtor {
-    fn new<T: 'static>(ptr: NonNull<Option<T>>) -> Dtor {
+    fn new<T: 'static>(ptr: NonNull<UnsafeCell<Option<T>>>) -> Dtor {
         unsafe fn try_drop<T: 'static>(ptr: *mut ()) {
-            let obj = &mut *ptr.cast::<Option<T>>();
-            obj.take();
+            let obj = &mut *ptr.cast::<UnsafeCell<Option<T>>>();
+            obj.with_mut(|val| { &mut *val }.take());
         }
 
         Dtor {
@@ -140,7 +140,7 @@ pub fn get() -> usize {
     THREAD_STATE.with(|state| state.id)
 }
 
-pub unsafe fn push<T: 'static>(tr: ThreadsRef, ptr: NonNull<Option<T>>) -> ThreadHandle {
+pub unsafe fn push<T: 'static>(tr: ThreadsRef, ptr: NonNull<UnsafeCell<Option<T>>>) -> ThreadHandle {
     let dtor = Dtor::new(ptr);
 
     THREAD_STATE.with(|state| {

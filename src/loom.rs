@@ -1,3 +1,4 @@
+#[cfg(feature = "parking_lot")]
 pub mod sync {
     pub use std::sync::Arc;
 
@@ -17,6 +18,9 @@ pub mod sync {
         }
     }
 }
+
+#[cfg(not(feature = "parking_lot"))]
+pub use std::sync;
 
 pub mod cell {
     pub struct UnsafeCell<T>(std::cell::UnsafeCell<T>);

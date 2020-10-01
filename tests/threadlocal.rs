@@ -11,7 +11,6 @@ mod loom {
     }
 }
 
-
 use loom::thread;
 use loom::sync::Arc;
 use per_thread_object::ThreadLocal;
@@ -141,7 +140,13 @@ fn test_more_thread() {
         let tla = Arc::new(tla);
         let tlb = Arc::new(tlb);
 
-        let handles = (0..33)
+        #[cfg(not(feature = "loom"))]
+        let n = 33;
+
+        #[cfg(feature = "loom")]
+        let n = 3;
+
+        let handles = (0..n)
             .map(|i| {
                 let tla = tla.clone();
                 let tlb = tlb.clone();

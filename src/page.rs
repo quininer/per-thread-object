@@ -8,7 +8,11 @@ use crate::loom::cell::UnsafeCell;
 use crate::loom::sync::Mutex;
 
 
+#[cfg(not(feature = "loom"))]
 pub const DEFAULT_PAGE_CAP: usize = 16;
+
+#[cfg(feature = "loom")]
+pub const DEFAULT_PAGE_CAP: usize = 2;
 
 pub struct Storage<T> {
     inner: Box<Inner<T>>
@@ -36,6 +40,7 @@ impl<T> Storage<T> {
     }
 
     pub fn with_threads(_num: usize) -> Storage<T> {
+        #[cfg(not(feature = "loom"))]
         macro_rules! arr {
             ( $e:expr ; x16 ) => {
                 [
@@ -46,6 +51,14 @@ impl<T> Storage<T> {
                 ]
             }
         }
+
+        #[cfg(feature = "loom")]
+        macro_rules! arr {
+            ( $e:expr ; x16 ) => {
+                [$e, $e]
+            }
+        }
+
 
         let inner = Box::new(Inner {
             threads: Mutex::new(BTreeMap::new()),
@@ -83,13 +96,14 @@ impl<T> Storage<T> {
     }
 
     #[inline]
-    pub unsafe fn get_or_new(&self, id: usize) -> NonNull<Option<T>> {
+    pub unsafe fn get_or_new(&self, id: usize) -> NonNull<UnsafeCell<Option<T>>> {
         let inner = &self.inner;
         let (page_id, index) = map_index(DEFAULT_PAGE_CAP, id);
 
         if page_id == 0 {
-            inner.fastpage.get_unchecked(index)
-                .with_mut(|obj| NonNull::new_unchecked(obj))
+            let ptr = inner.fastpage.get_unchecked(index);
+            let ptr = &***ptr as *const UnsafeCell<Option<_>>;
+            NonNull::new_unchecked(ptr as *mut _)
         } else {
             Storage::or_new(inner, page_id, index)
         }
@@ -105,7 +119,7 @@ impl<T> Storage<T> {
     }
 
     #[cold]
-    unsafe fn or_new(inner: &Inner<T>, page_id: usize, index: usize) -> NonNull<Option<T>> {
+    unsafe fn or_new(inner: &Inner<T>, page_id: usize, index: usize) -> NonNull<UnsafeCell<Option<T>>> {
         let mut pages = inner.fallback.lock().unwrap();
         let page_id = page_id - 1;
 
@@ -113,10 +127,11 @@ impl<T> Storage<T> {
             pages.resize_with(page_id + 1, Page::new);
         }
 
-        pages.get_unchecked(page_id)
+        let ptr = pages.get_unchecked(page_id)
             .ptr
-            .get_unchecked(index)
-            .with_mut(|obj| NonNull::new_unchecked(obj))
+            .get_unchecked(index);
+        let ptr = &**ptr as *const UnsafeCell<Option<_>>;
+        NonNull::new_unchecked(ptr as *mut _)
     }
 }
 
