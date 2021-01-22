@@ -22,22 +22,22 @@ fn test_get() {
         let tl: ThreadLocal<Box<usize>> = ThreadLocal::new();
         let tl = Arc::new(tl);
 
-        assert!(tl.get().is_none());
+        assert!(tl.try_with(|_| ()).is_none());
 
-        let val = tl.get_or(|| Box::new(0x42));
-        assert_eq!(0x42, **val);
+        let val = tl.with_or(|val| **val, || Box::new(0x42));
+        assert_eq!(0x42, val);
 
         let tl2 = tl.clone();
         thread::spawn(move || {
-            let val = tl2.get_or(|| Box::new(0x22));
-            assert_eq!(0x22, **val);
+            let val = tl2.with_or(|val| **val, || Box::new(0x22));
+            assert_eq!(0x22, val);
         });
 
-        let val = tl.get().unwrap();
-        assert_eq!(0x42, **val);
+        let val = tl.with(|val| **val);
+        assert_eq!(0x42, val);
 
-        let val = tl.get_or(|| Box::new(0x32));
-        assert_eq!(0x42, **val);
+        let val = tl.with_or(|val| **val, || Box::new(0x32));
+        assert_eq!(0x42, val);
     });
 }
 
@@ -48,33 +48,33 @@ fn test_thread_get() {
         let tl2 = tl.clone();
         let tl3 = tl2.clone();
 
-        let val = tl.get_or(|| Box::new(0x42));
-        assert_eq!(0x42, **val);
+        let val = tl.with_or(|val| **val, || Box::new(0x42));
+        assert_eq!(0x42, val);
 
         let j = thread::spawn(move || {
-            assert!(tl2.get().is_none());
+            assert!(tl2.try_with(|_| ()).is_none());
 
-            let val = tl2.get_or(|| Box::new(0x32));
-            assert_eq!(0x32, **val);
+            let val = tl2.with_or(|val| **val, || Box::new(0x32));
+            assert_eq!(0x32, val);
 
-            let val = tl2.get_or(|| Box::new(0x12));
-            assert_eq!(0x32, **val);
+            let val = tl2.with_or(|val| **val, || Box::new(0x12));
+            assert_eq!(0x32, val);
         });
 
         let j2 = thread::spawn(move || {
             let tl3 = tl3;
 
-            assert!(tl3.get().is_none());
+            assert!(tl3.try_with(|_| ()).is_none());
 
-            let val = tl3.get_or(|| Box::new(0x22));
-            assert_eq!(0x22, **val);
+            let val = tl3.with_or(|val| **val, || Box::new(0x22));
+            assert_eq!(0x22, val);
 
-            let val = tl3.get().unwrap();
-            assert_eq!(0x22, **val);
+            let val = tl3.with(|val| **val);
+            assert_eq!(0x22, val);
         });
 
-        let val = tl.get_or(|| Box::new(0x42));
-        assert_eq!(0x42, **val);
+        let val = tl.with_or(|val| **val, || Box::new(0x42));
+        assert_eq!(0x42, val);
 
         j.join().unwrap();
         j2.join().unwrap();
@@ -89,8 +89,8 @@ fn test_multi_obj() {
         let tla = Arc::new(tla);
         let tlb = Arc::new(tlb);
 
-        assert!(tla.get().is_none());
-        assert!(tlb.get().is_none());
+        assert!(tla.try_with(|_| ()).is_none());
+        assert!(tlb.try_with(|_| ()).is_none());
 
         let tla1 = tla.clone();
         let tlb1: Arc<ThreadLocal<_>> = tlb.clone();
@@ -98,37 +98,37 @@ fn test_multi_obj() {
         let j = thread::spawn(move || {
             let tla1 = tla1;
 
-            assert!(tla1.get().is_none());
+            assert!(tla1.try_with(|_| ()).is_none());
 
-            let val = tla1.get_or(|| Box::new(0x32));
-            assert_eq!(0x32, **val);
+            let val = tla1.with_or(|val| **val, || Box::new(0x32));
+            assert_eq!(0x32, val);
 
-            let val = tla1.get().unwrap();
-            assert_eq!(0x32, **val);
+            let val = tla1.with(|val| **val);
+            assert_eq!(0x32, val);
         });
 
         let j2 = thread::spawn(move || {
-            assert!(tlb1.get().is_none());
+            assert!(tlb1.try_with(|_| ()).is_none());
 
-            let val = tlb1.get_or(|| Box::new(0x22));
-            assert_eq!(0x22, **val);
+            let val = tlb1.with_or(|val| **val, || Box::new(0x22));
+            assert_eq!(0x22, val);
 
-            let val = tlb1.get().unwrap();
-            assert_eq!(0x22, **val);
+            let val = tlb1.with(|val| **val);
+            assert_eq!(0x22, val);
         });
 
-        let val = tla.get_or(|| Box::new(0x42));
-        assert_eq!(0x42, **val);
-        let val = tlb.get_or(|| Box::new(0x52));
-        assert_eq!(0x52, **val);
+        let val = tla.with_or(|val| **val, || Box::new(0x42));
+        assert_eq!(0x42, val);
+        let val = tlb.with_or(|val| **val, || Box::new(0x52));
+        assert_eq!(0x52, val);
 
         j.join().unwrap();
         j2.join().unwrap();
 
-        let val = tla.get().unwrap();
-        assert_eq!(0x42, **val);
-        let val = tlb.get().unwrap();
-        assert_eq!(0x52, **val);
+        let val = tla.with(|val| **val);
+        assert_eq!(0x42, val);
+        let val = tlb.with(|val| **val);
+        assert_eq!(0x52, val);
     });
 }
 
@@ -152,11 +152,11 @@ fn test_more_thread() {
                 let tlb = tlb.clone();
 
                 thread::spawn(move || {
-                    let val = tla.get_or(|| Box::new(i as u32));
-                    assert_eq!(i as u32, **val);
+                    let val = tla.with_or(|val| **val, || Box::new(i as u32));
+                    assert_eq!(i as u32, val);
 
-                    let val = tlb.get_or(|| Box::new(i as u64));
-                    assert_eq!(i as u64, **val);
+                    let val = tlb.with_or(|val| **val, || Box::new(i as u64));
+                    assert_eq!(i as u64, val);
                 })
             })
             .collect::<Vec<_>>();

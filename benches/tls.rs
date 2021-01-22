@@ -36,8 +36,7 @@ fn bench_thread_local(c: &mut Criterion) {
                 .map(|_| {
                     let start = Instant::now();
                     for _ in 0..N {
-                        let val = tl.get_or(|| 0x42);
-                        black_box(val);
+                        tl.with_or(|val| black_box(*val), || 0x42);
                     }
                     start.elapsed()
                 })

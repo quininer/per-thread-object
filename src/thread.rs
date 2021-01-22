@@ -13,7 +13,7 @@ pub struct ThreadHandle(Arc<Mutex<HashMap<ThreadsRef, Dtor>>>);
 #[cfg(all(feature = "parking_lot", not(feature = "loom")))]
 static THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
 
-#[cfg(all(not(feature = "parking_lot")))]
+#[cfg(not(feature = "parking_lot"))]
 static THREAD_ID_POOL: once_cell::sync::Lazy<Mutex<ThreadIdPool>>
     = once_cell::sync::Lazy::new(|| Mutex::new(ThreadIdPool::new()));
 

@@ -14,16 +14,15 @@
 //! let tl2 = tl.clone();
 //!
 //! thread::spawn(move || {
-//!     *tl2.get_or(default)
-//!         .borrow_mut() += 1;
-//!     assert_eq!(0x1, *tl2.get().unwrap().borrow());
+//!     tl2.with_or(|val| *val.borrow_mut() += 1, default);
+//!     let val = tl2.with(|val| *val.borrow());
+//!     assert_eq!(0x1, val);
 //! })
 //!     .join()
 //!     .unwrap();
 //!
-//! *tl.get_or(default)
-//!     .borrow_mut() += 2;
-//! assert_eq!(0x2, *tl.get_or(default).borrow());
+//! tl.with_or(|val| *val.borrow_mut() += 2, default);
+//! assert_eq!(0x2, tl.with_or(|val| *val.borrow(), default));
 //! ```
 
 #[cfg(not(feature = "loom"))]
@@ -69,37 +68,60 @@ impl<T: Send + 'static> ThreadLocal<T> {
     }
 
     #[inline]
-    pub fn get(&self) -> Option<&T> {
-        unsafe {
-            self.pool.get(thread::get())
-        }
+    pub fn with<F, R>(&self, f: F)
+        -> R
+    where
+        F: FnOnce(&T) -> R
+    {
+        let val = unsafe {
+            self.pool.get(thread::get()).expect("Uninitialized")
+        };
+        f(val)
     }
 
     #[inline]
-    pub fn get_or<F: FnOnce() -> T>(&self, f: F) -> &T {
+    pub fn try_with<F, R>(&self, f: F)
+        -> Option<R>
+    where
+        F: FnOnce(&T) -> R
+    {
+        let val = unsafe {
+            self.pool.get(thread::get())?
+        };
+        Some(f(val))
+    }
+
+    #[inline]
+    pub fn with_or<F, I, R>(&self, f: F, init: I)
+        -> R
+    where
+        F: FnOnce(&T) -> R,
+        I: FnOnce() -> T
+    {
         use std::convert::Infallible;
 
-        match self.get_or_try::<_, Infallible>(|| Ok(f())) {
+        match self.with_try_or::<_, _, _, Infallible>(f, || Ok(init())) {
             Ok(val) => val,
             Err(never) => match never {}
         }
     }
 
     #[inline]
-    pub fn get_or_try<F, E>(&self, f: F) -> Result<&T, E>
+    pub fn with_try_or<F, I, R, E>(&self, f: F, init: I)
+        -> Result<R, E>
     where
-        F: FnOnce() -> Result<T, E>
+        F: FnOnce(&T) -> R,
+        I: FnOnce() -> Result<T, E>
     {
         let id = thread::get();
         let ptr = unsafe { self.pool.get_or_new(id) };
 
         let obj = unsafe { &*ptr.as_ptr() };
-
         let val = if let Some(val) = obj.with(|val| unsafe { &*val }) {
             val
         } else {
             let val = obj.with_mut(|val| {
-                let val = unsafe { &mut *val }.get_or_insert(f()?);
+                let val = unsafe { &mut *val }.get_or_insert(init()?);
                 Ok(val)
             })?;
 
@@ -108,7 +130,7 @@ impl<T: Send + 'static> ThreadLocal<T> {
             val
         };
 
-        Ok(val)
+        Ok(f(val))
     }
 
     #[cold]
