@@ -14,15 +14,19 @@
 //! let tl2 = tl.clone();
 //!
 //! thread::spawn(move || {
-//!     tl2.with_or(|val| *val.borrow_mut() += 1, default);
-//!     let val = tl2.with(|val| *val.borrow());
+//!     per_thread_object::stack_token!(token);
+//!
+//!     *tl2.get_or_init(token, default).borrow_mut() += 1;
+//!     let val = *tl2.get(token).unwrap().borrow();
 //!     assert_eq!(0x1, val);
 //! })
 //!     .join()
 //!     .unwrap();
 //!
-//! tl.with_or(|val| *val.borrow_mut() += 2, default);
-//! assert_eq!(0x2, tl.with_or(|val| *val.borrow(), default));
+//! per_thread_object::stack_token!(token);
+//!
+//! *tl.get_or_init(token, default).borrow_mut() += 2;
+//! assert_eq!(0x2, *tl.get_or_init(token, default).borrow());
 //! ```
 
 #[cfg(not(feature = "loom"))]
@@ -60,6 +64,27 @@ pub struct ThreadLocal<T: Send + 'static> {
     pool: Storage<T>
 }
 
+pub struct StackToken {
+    _marker: std::marker::PhantomData<*const ()>,
+}
+
+impl StackToken {
+    #[doc(hidden)]
+    pub unsafe fn __private_new() -> StackToken {
+        StackToken {
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! stack_token {
+    ($name:ident) => {
+        #[allow(unsafe_code)]
+        let $name = &unsafe { $crate::StackToken::__private_new() };
+    };
+}
+
 impl<T: Send + 'static> ThreadLocal<T> {
     pub fn new() -> ThreadLocal<T> {
         ThreadLocal {
@@ -68,50 +93,31 @@ impl<T: Send + 'static> ThreadLocal<T> {
     }
 
     #[inline]
-    pub fn with<F, R>(&self, f: F)
-        -> R
-    where
-        F: FnOnce(&T) -> R
-    {
-        let val = unsafe {
-            self.pool.get(thread::get()).expect("Uninitialized")
-        };
-        f(val)
-    }
-
-    #[inline]
-    pub fn try_with<F, R>(&self, f: F)
-        -> Option<R>
-    where
-        F: FnOnce(&T) -> R
-    {
-        let val = unsafe {
-            self.pool.get(thread::get())?
-        };
-        Some(f(val))
-    }
-
-    #[inline]
-    pub fn with_or<F, I, R>(&self, f: F, init: I)
-        -> R
-    where
-        F: FnOnce(&T) -> R,
-        I: FnOnce() -> T
-    {
-        use std::convert::Infallible;
-
-        match self.with_try_or::<_, _, _, Infallible>(f, || Ok(init())) {
-            Ok(val) => val,
-            Err(never) => match never {}
+    pub fn get<'stack>(&'stack self, _token: &'stack StackToken) -> Option<&'stack T> {
+        unsafe {
+            self.pool.get(thread::get())
         }
     }
 
     #[inline]
-    pub fn with_try_or<F, I, R, E>(&self, f: F, init: I)
-        -> Result<R, E>
+    pub fn get_or_init<'stack, F>(&'stack self, token: &'stack StackToken, init: F)
+        -> &'stack T
     where
-        F: FnOnce(&T) -> R,
-        I: FnOnce() -> Result<T, E>
+        F: FnOnce() -> T
+    {
+        use std::convert::Infallible;
+
+        match self.get_or_try_init::<_, Infallible>(token, || Ok(init())) {
+            Ok(val) => val,
+            Err(err) => match err {}
+        }
+    }
+
+    #[inline]
+    pub fn get_or_try_init<'stack, F, E>(&'stack self, _token: &'stack StackToken, init: F)
+        -> Result<&'stack T, E>
+    where
+        F: FnOnce() -> Result<T, E>
     {
         let id = thread::get();
         let ptr = unsafe { self.pool.get_or_new(id) };
@@ -130,7 +136,7 @@ impl<T: Send + 'static> ThreadLocal<T> {
             val
         };
 
-        Ok(f(val))
+        Ok(val)
     }
 
     #[cold]

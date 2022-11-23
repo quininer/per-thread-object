@@ -34,9 +34,11 @@ fn bench_thread_local(c: &mut Criterion) {
             (0..iters)
                 .into_par_iter()
                 .map(|_| {
+                    per_thread_object::stack_token!(token);
+
                     let start = Instant::now();
                     for _ in 0..N {
-                        tl.with_or(|val| black_box(*val), || 0x42);
+                        black_box(*tl.get_or_init(token, || 0x42));
                     }
                     start.elapsed()
                 })

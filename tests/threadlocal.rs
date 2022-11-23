@@ -22,21 +22,25 @@ fn test_get() {
         let tl: ThreadLocal<Box<usize>> = ThreadLocal::new();
         let tl = Arc::new(tl);
 
-        assert!(tl.try_with(|_| ()).is_none());
+        per_thread_object::stack_token!(token);
 
-        let val = tl.with_or(|val| **val, || Box::new(0x42));
+        assert!(tl.get(token).is_none());
+
+        let val = **tl.get_or_init(token, || Box::new(0x42));
         assert_eq!(0x42, val);
 
         let tl2 = tl.clone();
         thread::spawn(move || {
-            let val = tl2.with_or(|val| **val, || Box::new(0x22));
+            per_thread_object::stack_token!(token);
+
+            let val = **tl2.get_or_init(token, || Box::new(0x22));
             assert_eq!(0x22, val);
         });
 
-        let val = tl.with(|val| **val);
+        let val = **tl.get(token).unwrap();
         assert_eq!(0x42, val);
 
-        let val = tl.with_or(|val| **val, || Box::new(0x32));
+        let val = **tl.get_or_init(token, || Box::new(0x32));
         assert_eq!(0x42, val);
     });
 }
@@ -48,32 +52,38 @@ fn test_thread_get() {
         let tl2 = tl.clone();
         let tl3 = tl2.clone();
 
-        let val = tl.with_or(|val| **val, || Box::new(0x42));
+        per_thread_object::stack_token!(token);
+
+        let val = **tl.get_or_init(token, || Box::new(0x42));
         assert_eq!(0x42, val);
 
         let j = thread::spawn(move || {
-            assert!(tl2.try_with(|_| ()).is_none());
+            per_thread_object::stack_token!(token);
 
-            let val = tl2.with_or(|val| **val, || Box::new(0x32));
+            assert!(tl2.get(token).is_none());
+
+            let val = **tl2.get_or_init(token, || Box::new(0x32));
             assert_eq!(0x32, val);
 
-            let val = tl2.with_or(|val| **val, || Box::new(0x12));
+            let val = **tl2.get_or_init(token, || Box::new(0x12));
             assert_eq!(0x32, val);
         });
 
         let j2 = thread::spawn(move || {
             let tl3 = tl3;
 
-            assert!(tl3.try_with(|_| ()).is_none());
+            per_thread_object::stack_token!(token);
 
-            let val = tl3.with_or(|val| **val, || Box::new(0x22));
+            assert!(tl3.get(token).is_none());
+
+            let val = **tl3.get_or_init(token, || Box::new(0x22));
             assert_eq!(0x22, val);
 
-            let val = tl3.with(|val| **val);
+            let val = **tl3.get(token).unwrap();
             assert_eq!(0x22, val);
         });
 
-        let val = tl.with_or(|val| **val, || Box::new(0x42));
+        let val = **tl.get_or_init(token, || Box::new(0x42));
         assert_eq!(0x42, val);
 
         j.join().unwrap();
@@ -89,8 +99,10 @@ fn test_multi_obj() {
         let tla = Arc::new(tla);
         let tlb = Arc::new(tlb);
 
-        assert!(tla.try_with(|_| ()).is_none());
-        assert!(tlb.try_with(|_| ()).is_none());
+        per_thread_object::stack_token!(token);
+
+        assert!(tla.get(token).is_none());
+        assert!(tlb.get(token).is_none());
 
         let tla1 = tla.clone();
         let tlb1: Arc<ThreadLocal<_>> = tlb.clone();
@@ -98,36 +110,40 @@ fn test_multi_obj() {
         let j = thread::spawn(move || {
             let tla1 = tla1;
 
-            assert!(tla1.try_with(|_| ()).is_none());
+            per_thread_object::stack_token!(token);
 
-            let val = tla1.with_or(|val| **val, || Box::new(0x32));
+            assert!(tla1.get(token).is_none());
+
+            let val = **tla1.get_or_init(token, || Box::new(0x32));
             assert_eq!(0x32, val);
 
-            let val = tla1.with(|val| **val);
+            let val = **tla1.get(token).unwrap();
             assert_eq!(0x32, val);
         });
 
         let j2 = thread::spawn(move || {
-            assert!(tlb1.try_with(|_| ()).is_none());
+            per_thread_object::stack_token!(token);
 
-            let val = tlb1.with_or(|val| **val, || Box::new(0x22));
+            assert!(tlb1.get(token).is_none());
+
+            let val = **tlb1.get_or_init(token, || Box::new(0x22));
             assert_eq!(0x22, val);
 
-            let val = tlb1.with(|val| **val);
+            let val = **tlb1.get(token).unwrap();
             assert_eq!(0x22, val);
         });
 
-        let val = tla.with_or(|val| **val, || Box::new(0x42));
+        let val = **tla.get_or_init(token, || Box::new(0x42));
         assert_eq!(0x42, val);
-        let val = tlb.with_or(|val| **val, || Box::new(0x52));
+        let val = **tlb.get_or_init(token, || Box::new(0x52));
         assert_eq!(0x52, val);
 
         j.join().unwrap();
         j2.join().unwrap();
 
-        let val = tla.with(|val| **val);
+        let val = **tla.get(token).unwrap();
         assert_eq!(0x42, val);
-        let val = tlb.with(|val| **val);
+        let val = **tlb.get(token).unwrap();
         assert_eq!(0x52, val);
     });
 }
@@ -152,10 +168,12 @@ fn test_more_thread() {
                 let tlb = tlb.clone();
 
                 thread::spawn(move || {
-                    let val = tla.with_or(|val| **val, || Box::new(i as u32));
+                    per_thread_object::stack_token!(token);
+
+                    let val = **tla.get_or_init(token, || Box::new(i as u32));
                     assert_eq!(i as u32, val);
 
-                    let val = tlb.with_or(|val| **val, || Box::new(i as u64));
+                    let val = **tlb.get_or_init(token, || Box::new(i as u64));
                     assert_eq!(i as u64, val);
                 })
             })
@@ -176,8 +194,10 @@ fn test_loop_thread() {
     std::thread::scope(|s| {
         for _ in 0..64 { // must > DEFAULT_PAGE_CAP
             s.spawn(|| {
+                per_thread_object::stack_token!(token);
+
                 for _ in 0..100 {
-                    tl.with_or(|val| *val, || 0x42);
+                    tl.get_or_init(token, || 0x42);
                 }
             });
         }
