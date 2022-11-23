@@ -123,7 +123,7 @@ impl<T> Storage<T> {
         let mut pages = inner.fallback.lock().unwrap();
         let page_id = page_id - 1;
 
-        if page_id > pages.len() {
+        if page_id >= pages.len() {
             pages.resize_with(page_id + 1, Page::new);
         }
 
@@ -177,10 +177,11 @@ impl ThreadsRef {
 
 #[inline]
 fn map_index(cap: usize, n: usize) -> (usize, usize) {
-    if n <= cap {
+    if n < cap {
         (0, n)
     } else {
         let i = n / cap;
-        (i, n - (i * cap))
+        let rem = n % cap;
+        (i, rem)
     }
 }

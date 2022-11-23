@@ -166,3 +166,20 @@ fn test_more_thread() {
         }
     });
 }
+
+#[test]
+fn test_loop_thread() {
+    use per_thread_object::ThreadLocal;
+
+    let tl: ThreadLocal<u64> = ThreadLocal::new();
+
+    std::thread::scope(|s| {
+        for _ in 0..64 { // must > DEFAULT_PAGE_CAP
+            s.spawn(|| {
+                for _ in 0..100 {
+                    tl.with_or(|val| *val, || 0x42);
+                }
+            });
+        }
+    });
+}
