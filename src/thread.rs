@@ -10,12 +10,13 @@ use loom::thread_local;
 
 pub struct ThreadHandle(Arc<Mutex<HashMap<ThreadsRef, Dtor>>>);
 
-#[cfg(all(feature = "parking_lot", not(feature = "loom")))]
+#[cfg(not(feature = "loom"))]
 static THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
 
-#[cfg(not(feature = "parking_lot"))]
-static THREAD_ID_POOL: once_cell::sync::Lazy<Mutex<ThreadIdPool>>
-    = once_cell::sync::Lazy::new(|| Mutex::new(ThreadIdPool::new()));
+#[cfg(feature = "loom")]
+loom::lazy_static! {
+    static ref THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
+}
 
 thread_local!{
     static THREAD_STATE: ThreadState = ThreadState::new();
@@ -87,7 +88,9 @@ impl Dtor {
     fn new<T: 'static>(ptr: NonNull<UnsafeCell<Option<T>>>) -> Dtor {
         unsafe fn try_drop<T: 'static>(ptr: *mut ()) {
             let obj = &mut *ptr.cast::<UnsafeCell<Option<T>>>();
-            obj.with_mut(|val| { &mut *val }.take());
+            obj.with_mut(|val| {
+                let _ = { &mut *val }.take();
+            });
         }
 
         Dtor {
@@ -115,6 +118,8 @@ impl Drop for ThreadState {
                 tr.remove(self.id);
             }
         }
+
+        drop(list);
 
         THREAD_ID_POOL.lock().unwrap()
             .dealloc(self.id);

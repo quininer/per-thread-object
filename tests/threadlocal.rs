@@ -30,7 +30,7 @@ fn test_get() {
         assert_eq!(0x42, val);
 
         let tl2 = tl.clone();
-        thread::spawn(move || {
+        let j = thread::spawn(move || {
             per_thread_object::stack_token!(token);
 
             let val = **tl2.get_or_init(token, || Box::new(0x22));
@@ -42,6 +42,8 @@ fn test_get() {
 
         let val = **tl.get_or_init(token, || Box::new(0x32));
         assert_eq!(0x42, val);
+
+        j.join().unwrap();
     });
 }
 
@@ -186,6 +188,7 @@ fn test_more_thread() {
 }
 
 #[test]
+#[cfg(not(feature = "loom"))]
 fn test_loop_thread() {
     use per_thread_object::ThreadLocal;
 
