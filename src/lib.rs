@@ -127,10 +127,8 @@ impl<T: Send + 'static> ThreadLocal<T> {
         let val = if let Some(val) = obj.with(|val| unsafe { &*val }) {
             val
         } else {
-            let val = obj.with_mut(|val| {
-                let val = unsafe { &mut *val }.get_or_insert(init()?);
-                Ok(val)
-            })?;
+            let newval = init()?;
+            let val = obj.with_mut(|val| unsafe { &mut *val }.get_or_insert(newval));
 
             ThreadLocal::or_try(&self.pool, id, ptr);
 
