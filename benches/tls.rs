@@ -84,26 +84,6 @@ fn bench_thread_local(c: &mut Criterion) {
                 .sum()
         });
     });
-
-
-    c.bench_function("thread-local-object", |b| {
-        use thread_local_object::ThreadLocal;
-
-        let tl: ThreadLocal<u64> = ThreadLocal::new();
-
-        b.iter_custom(|iters| {
-            (0..iters)
-                .into_par_iter()
-                .map(|_| {
-                    let start = Instant::now();
-                    for _ in 0..N {
-                        tl.entry(|e| drop(black_box(e.or_insert_with(|| 0x42))));
-                    }
-                    start.elapsed()
-                })
-                .sum()
-        });
-    });
 }
 
 criterion_group!(tls, bench_thread_local);

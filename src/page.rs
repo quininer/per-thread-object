@@ -2,7 +2,7 @@ use std::mem;
 use std::ptr::NonNull;
 use std::mem::ManuallyDrop;
 use std::collections::BTreeMap;
-use cache_padded::CachePadded;
+use crossbeam_utils::CachePadded;
 use crate::thread::ThreadHandle;
 use crate::loom::cell::UnsafeCell;
 use crate::loom::sync::Mutex;
