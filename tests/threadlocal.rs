@@ -1,4 +1,5 @@
 #[cfg(not(feature = "loom"))]
+#[cfg(not(feature = "shuttle"))]
 mod loom {
     pub use std::thread;
     pub use std::sync;
@@ -8,6 +9,19 @@ mod loom {
         F: Fn() + Sync + Send + 'static
     {
         f()
+    }
+}
+
+#[cfg(feature = "shuttle")]
+mod loom {
+    pub use shuttle::thread;
+    pub use shuttle::sync;
+
+    pub fn model<F>(f: F)
+    where
+        F: Fn() + Sync + Send + 'static
+    {
+        shuttle::check_random(f, 1000)
     }
 }
 
@@ -189,6 +203,7 @@ fn test_more_thread() {
 
 #[test]
 #[cfg(not(feature = "loom"))]
+#[cfg(not(feature = "shuttle"))]
 fn test_loop_thread() {
     use per_thread_object::ThreadLocal;
 

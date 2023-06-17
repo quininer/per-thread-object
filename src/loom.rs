@@ -1,4 +1,8 @@
+#[cfg(not(feature = "shuttle"))]
 pub use std::sync;
+
+#[cfg(feature = "shuttle")]
+pub use shuttle::sync;
 
 pub mod cell {
     pub struct UnsafeCell<T>(std::cell::UnsafeCell<T>);

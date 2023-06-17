@@ -5,16 +5,19 @@ use crate::loom::sync::{ Arc, Mutex };
 use crate::loom::cell::UnsafeCell;
 
 #[cfg(feature = "loom")]
-use loom::thread_local;
+use loom::{ thread_local, lazy_static };
 
+#[cfg(feature = "shuttle")]
+use shuttle::{ thread_local, lazy_static };
 
 pub struct ThreadHandle(Arc<Mutex<HashMap<ThreadsRef, Dtor>>>);
 
 #[cfg(not(feature = "loom"))]
+#[cfg(not(feature = "shuttle"))]
 static THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
 
-#[cfg(feature = "loom")]
-loom::lazy_static! {
+#[cfg(any(feature = "loom", feature = "shuttle"))]
+lazy_static! {
     static ref THREAD_ID_POOL: Mutex<ThreadIdPool> = Mutex::new(ThreadIdPool::new());
 }
 

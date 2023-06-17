@@ -1,6 +1,7 @@
 //! Efficient per-object thread-local storage implementation.
 //!
 //! ```rust
+//! # if cfg!(feature = "loom") || cfg!(feature = "shuttle") { return }
 //! use std::thread;
 //! use std::sync::Arc;
 //! use std::cell::RefCell;
