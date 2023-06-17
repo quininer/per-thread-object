@@ -12,9 +12,11 @@ documentation = "https://docs.rs/per-thread-object"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-parking_lot = { version = "0.12", optional = true }
-loom = { version = "0.5", optional = true }
 crossbeam-utils = "0.8"
+
+# No work.
+# because global static and thread local support for loom is not yet complete.
+loom = { version = "0.5", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

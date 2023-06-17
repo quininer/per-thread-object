@@ -1,25 +1,3 @@
-#[cfg(feature = "parking_lot")]
-pub mod sync {
-    pub use std::sync::Arc;
-
-    pub struct Mutex<T>(parking_lot::Mutex<T>);
-
-    impl<T> Mutex<T> {
-        #[inline]
-        pub const fn new(t: T) -> Mutex<T> {
-            use parking_lot::lock_api::RawMutex;
-
-            Mutex(parking_lot::Mutex::const_new(parking_lot::RawMutex::INIT, t))
-        }
-
-        #[inline]
-        pub fn lock(&self) -> Result<parking_lot::MutexGuard<'_, T>, std::convert::Infallible> {
-            Ok(self.0.lock())
-        }
-    }
-}
-
-#[cfg(not(feature = "parking_lot"))]
 pub use std::sync;
 
 pub mod cell {
