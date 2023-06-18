@@ -205,18 +205,20 @@ fn test_more_thread() {
 #[cfg(not(feature = "loom"))]
 #[cfg(not(feature = "shuttle"))]
 fn test_loop_thread() {
+    use std::sync::Barrier;
     use per_thread_object::ThreadLocal;
 
     let tl: ThreadLocal<u64> = ThreadLocal::new();
+    let bar = Barrier::new(64);
 
     std::thread::scope(|s| {
         for _ in 0..64 { // must > DEFAULT_PAGE_CAP
             s.spawn(|| {
                 per_thread_object::stack_token!(token);
 
-                for _ in 0..100 {
-                    tl.get_or_init(token, || 0x42);
-                }
+                tl.get_or_init(token, || 0x42);
+
+                bar.wait();
             });
         }
     });

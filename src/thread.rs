@@ -1,6 +1,7 @@
 use std::ptr::NonNull;
-use std::collections::HashMap;
-use crate::page::{ DEFAULT_PAGE_CAP, ThreadsRef };
+use std::cmp::Reverse;
+use std::collections::{ HashMap, BinaryHeap };
+use crate::page::ThreadsRef;
 use crate::loom::sync::{ Arc, Mutex };
 use crate::loom::cell::UnsafeCell;
 
@@ -27,8 +28,7 @@ thread_local!{
 
 struct ThreadIdPool {
     max: usize,
-    small_freelist: Vec<usize>, // TODO use heapless vec
-    slow_freelist: Vec<usize>
+    pool: Option<BinaryHeap<Reverse<usize>>>,
 }
 
 struct ThreadState {
@@ -45,22 +45,12 @@ impl ThreadIdPool {
     const fn new() -> ThreadIdPool {
         ThreadIdPool {
             max: 0,
-            small_freelist: Vec::new(),
-            slow_freelist: Vec::new()
+            pool: None
         }
     }
 
     fn alloc(&mut self) -> usize {
-        if let Some(id) = self.small_freelist.pop()
-            .or_else(|| self.slow_freelist.pop())
-        {
-            if self.slow_freelist.capacity() != 0
-                && self.slow_freelist.is_empty()
-                && self.small_freelist.len() < DEFAULT_PAGE_CAP / 2
-            {
-                self.slow_freelist.shrink_to_fit();
-            }
-
+        if let Some(Reverse(id)) = self.pool.get_or_insert_with(BinaryHeap::new).pop() {
             id
         } else {
             let id = self.max;
@@ -70,11 +60,7 @@ impl ThreadIdPool {
     }
 
     fn dealloc(&mut self, id: usize) {
-        if id <= DEFAULT_PAGE_CAP {
-            self.small_freelist.push(id);
-        } else {
-            self.slow_freelist.push(id)
-        }
+        self.pool.get_or_insert_with(BinaryHeap::new).push(Reverse(id));
     }
 }
 

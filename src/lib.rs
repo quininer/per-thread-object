@@ -44,8 +44,6 @@ use std::ptr::NonNull;
 use loom::cell::UnsafeCell;
 use page::Storage;
 
-pub use page::DEFAULT_PAGE_CAP;
-
 
 /// Per-object thread-local storage
 ///
@@ -89,8 +87,19 @@ macro_rules! stack_token {
 
 impl<T: Send + 'static> ThreadLocal<T> {
     pub fn new() -> ThreadLocal<T> {
+        #[cfg(not(feature = "loom"))]
+        #[cfg(not(feature = "shuttle"))]
+        let default = 16;
+
+        #[cfg(any(feature = "loom", feature = "shuttle"))]
+        let default = 3;
+
+        ThreadLocal::with_threads(default)
+    }
+
+    pub fn with_threads(num: usize) -> ThreadLocal<T> {
         ThreadLocal {
-            pool: Storage::new()
+            pool: Storage::with_threads(num)
         }
     }
 

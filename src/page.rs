@@ -9,12 +9,6 @@ use crate::loom::sync::Mutex;
 use crate::util::BoxTail;
 
 
-#[cfg(not(feature = "loom"))]
-pub const DEFAULT_PAGE_CAP: usize = 16;
-
-#[cfg(feature = "loom")]
-pub const DEFAULT_PAGE_CAP: usize = 2;
-
 pub struct Storage<T> {
     inner: BoxTail<Inner<T>, FastPageElem<T>>
 }
@@ -36,11 +30,6 @@ struct Page<T> {
 }
 
 impl<T> Storage<T> {
-    #[inline]
-    pub fn new() -> Storage<T> {
-        Storage::with_threads(DEFAULT_PAGE_CAP)
-    }
-
     pub fn with_threads(num: usize) -> Storage<T> {
         let inner = BoxTail::new(
             Inner {
