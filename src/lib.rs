@@ -36,6 +36,7 @@ mod loom;
 #[cfg(feature = "loom")]
 use loom;
 
+mod util;
 mod thread;
 mod page;
 

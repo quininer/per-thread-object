@@ -6,6 +6,7 @@ use crossbeam_utils::CachePadded;
 use crate::thread::ThreadHandle;
 use crate::loom::cell::UnsafeCell;
 use crate::loom::sync::Mutex;
+use crate::util::BoxTail;
 
 
 #[cfg(not(feature = "loom"))]
@@ -15,7 +16,7 @@ pub const DEFAULT_PAGE_CAP: usize = 16;
 pub const DEFAULT_PAGE_CAP: usize = 2;
 
 pub struct Storage<T> {
-    inner: Box<Inner<T>>
+    inner: BoxTail<Inner<T>, FastPageElem<T>>
 }
 
 #[derive(Hash, Eq, PartialEq)]
@@ -26,8 +27,9 @@ pub struct ThreadsRef {
 struct Inner<T> {
     threads: Mutex<BTreeMap<usize, ThreadHandle>>,
     fallback: Mutex<Vec<Page<T>>>,
-    fastpage: [CachePadded<ManuallyDrop<UnsafeCell<Option<T>>>>; DEFAULT_PAGE_CAP]
 }
+
+type FastPageElem<T> = CachePadded<ManuallyDrop<UnsafeCell<Option<T>>>>;
 
 struct Page<T> {
     ptr: Box<[ManuallyDrop<UnsafeCell<Option<T>>>]>
@@ -39,32 +41,17 @@ impl<T> Storage<T> {
         Storage::with_threads(DEFAULT_PAGE_CAP)
     }
 
-    pub fn with_threads(_num: usize) -> Storage<T> {
-        #[cfg(not(feature = "loom"))]
-        macro_rules! arr {
-            ( $e:expr ; x16 ) => {
-                [
-                    $e, $e, $e, $e,
-                    $e, $e, $e, $e,
-                    $e, $e, $e, $e,
-                    $e, $e, $e, $e
-                ]
+    pub fn with_threads(num: usize) -> Storage<T> {
+        let inner = BoxTail::new(
+            Inner {
+                threads: Mutex::new(BTreeMap::new()),
+                fallback: Mutex::new(Vec::new()),
+            },
+            num,
+            |ptr: *mut FastPageElem<T>| unsafe {
+                ptr.write(CachePadded::new(ManuallyDrop::new(UnsafeCell::new(None))));
             }
-        }
-
-        #[cfg(feature = "loom")]
-        macro_rules! arr {
-            ( $e:expr ; x16 ) => {
-                [$e, $e]
-            }
-        }
-
-
-        let inner = Box::new(Inner {
-            threads: Mutex::new(BTreeMap::new()),
-            fallback: Mutex::new(Vec::new()),
-            fastpage: arr![CachePadded::new(ManuallyDrop::new(UnsafeCell::new(None))); x16]
-        });
+        );
 
         Storage { inner }
     }
@@ -85,10 +72,10 @@ impl<T> Storage<T> {
     #[inline]
     pub unsafe fn get(&self, id: usize) -> Option<&T> {
         let inner = &self.inner;
-        let (page_id, index) = map_index(DEFAULT_PAGE_CAP, id);
+        let (page_id, index) = map_index(inner.array_len(), id);
 
         if page_id == 0 {
-            inner.fastpage.get_unchecked(index)
+            inner.array().get_unchecked(index)
                 .with(|obj| (*obj).as_ref())
         } else {
             Storage::or_get(inner, page_id, index)
@@ -98,10 +85,10 @@ impl<T> Storage<T> {
     #[inline]
     pub unsafe fn get_or_new(&self, id: usize) -> NonNull<UnsafeCell<Option<T>>> {
         let inner = &self.inner;
-        let (page_id, index) = map_index(DEFAULT_PAGE_CAP, id);
+        let (page_id, index) = map_index(inner.array_len(), id);
 
         if page_id == 0 {
-            let ptr = inner.fastpage.get_unchecked(index);
+            let ptr = inner.array().get_unchecked(index);
             let ptr = &***ptr as *const UnsafeCell<Option<_>>;
             NonNull::new_unchecked(ptr as *mut _)
         } else {
