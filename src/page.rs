@@ -92,7 +92,7 @@ impl<T> Storage<T> {
             let ptr = &***ptr as *const UnsafeCell<Option<_>>;
             NonNull::new_unchecked(ptr as *mut _)
         } else {
-            Storage::or_new(inner, page_id, index)
+            Storage::or_new(inner, inner.array_len(), page_id, index)
         }
     }
 
@@ -106,12 +106,14 @@ impl<T> Storage<T> {
     }
 
     #[cold]
-    unsafe fn or_new(inner: &Inner<T>, page_id: usize, index: usize) -> NonNull<UnsafeCell<Option<T>>> {
+    unsafe fn or_new(inner: &Inner<T>, arr_len: usize, page_id: usize, index: usize)
+        -> NonNull<UnsafeCell<Option<T>>>
+    {
         let mut pages = inner.fallback.lock().unwrap();
         let page_id = page_id - 1;
 
         if page_id >= pages.len() {
-            pages.resize_with(page_id + 1, Page::new);
+            pages.resize_with(page_id + 1, || Page::new(arr_len));
         }
 
         let ptr = pages.get_unchecked(page_id)
@@ -123,19 +125,11 @@ impl<T> Storage<T> {
 }
 
 impl<T> Page<T> {
-    fn new() -> Page<T> {
-        macro_rules! arr {
-            ( $e:expr ; x16 ) => {
-                vec![
-                    $e, $e, $e, $e,
-                    $e, $e, $e, $e,
-                    $e, $e, $e, $e,
-                    $e, $e, $e, $e
-                ]
-            }
-        }
-
-        Page { ptr: arr![ManuallyDrop::new(UnsafeCell::new(None)); x16].into_boxed_slice() }
+    fn new(arr_len: usize) -> Page<T> {
+        let arr = (0..arr_len)
+            .map(|_| ManuallyDrop::new(UnsafeCell::new(None)))
+            .collect::<Vec<_>>();
+        Page { ptr: arr.into_boxed_slice() }
     }
 }
 
