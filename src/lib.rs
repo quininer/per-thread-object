@@ -54,7 +54,7 @@ use page::Storage;
 /// instead of using global space.
 ///
 /// this crate supports any number of threads,
-/// but only the [DEFAULT_PAGE_CAP] threads are lock-free.
+/// but only the specified number of threads are lock-free.
 ///
 /// ## Panic when dropping
 ///
