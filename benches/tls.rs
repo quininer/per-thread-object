@@ -1,6 +1,7 @@
 use std::time::Instant;
+use std::hint::black_box;
 use rayon::prelude::*;
-use criterion::{ criterion_main, criterion_group, Criterion, black_box };
+use criterion::{ criterion_main, criterion_group, Criterion };
 
 
 const N: usize = 500;
@@ -17,7 +18,9 @@ fn bench_thread_local(c: &mut Criterion) {
                 .map(|_| {
                     let start = Instant::now();
                     for _ in 0..N {
-                        TL.with(|val| drop(black_box(val)));
+                        TL.with(|val| {
+                            let _ = black_box(val);
+                        });
                     }
                     start.elapsed()
                 })
@@ -77,7 +80,9 @@ fn bench_thread_local(c: &mut Criterion) {
                 .map(|_| {
                     let start = Instant::now();
                     for _ in 0..N {
-                        tl.with(|val| drop(black_box(val)));
+                        tl.with(|val| {
+                            let _ = black_box(val);
+                        });
                     }
                     start.elapsed()
                 })

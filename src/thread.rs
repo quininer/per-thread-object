@@ -65,6 +65,7 @@ impl ThreadIdPool {
 }
 
 impl ThreadState {
+    #[allow(clippy::arc_with_non_send_sync)]
     fn new() -> ThreadState {
         ThreadState {
             id: THREAD_ID_POOL.lock().unwrap().alloc(),
